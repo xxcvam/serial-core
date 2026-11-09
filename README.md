@@ -2,7 +2,7 @@
 
 SERIAL 是 ECLIPTICA STUDIO / 月枢製品 的原创确定性生成式视听乐器。本仓库只保存**声音身份与生成内核的候选实现与规划**，不含硬件固件、不含 Rodin 资产、不含产品册原文。
 
-进度截点：2026-11-09，v0.4 Audition。
+进度截点：2026-11-10，v0.4.1 Stability & Reproducibility Pass。
 
 ## 目录
 
@@ -24,6 +24,17 @@ tools/      验证脚本与黄金向量
 
 `v0.4` 里 `SYNTH` 三档（v0.4 新鼓 / v0.3 旧鼓 / 中性替换）与 `SCHEME A/B` 是给对照实验用的，不是产品分支。
 
+### v0.4.1 修了什么（在 v0.4 文件内）
+
+| 项 | 之前 | 现在 |
+|---|---|---|
+| Glitch 位置偏置 | `planGlitch` 取到 cap 个就 break，故障事件全堆在小节前部 | 收集全部 1/32 候选 → RNG 洗牌 → 按 minGap=24 tick 抽 cap=3 |
+| Glitch 时间保真 | 播放时 `Math.round(tick/24)` 映射到 1/16 步，1/32 落点被吃掉或偏移 | 按真实 `tick` 精确排入 `t + (tick/PPQ)*beat` |
+| Glitch 进实时路径 | `playStep()` 每步重算 planGlitch（SHA-256 在调度线程） | `build()` 期一次预计算 `GL[secId][bar]`，播放只查表 |
+| Glitch / CRACK 总线 | 两者共用 `glitchGate` | 拆成 `glitchGate`（故障效果）与 `crackGate`（CRACK 门控），链路 `drumBus→drumComp→glitchGate→crackGate→comp` |
+| STOP 竞态 | 110ms 延时回调无条件 `panic()`，快速重播会杀掉新的一次运行 | `runId` 令牌，旧回调发现 runId 变化即退出 |
+| 音色版本 | vBass 无版本标识 | 注释标注 `SERIAL-BASS/SINE-55`（v0.3 起沿用，非早期 Saw+Sub） |
+
 ## 当前验收状态
 
 用户已认可：INTRO、GROOVE、BASS 音色、新鼓整体。
@@ -38,14 +49,19 @@ tools/      验证脚本与黄金向量
 
 ## 验证
 
+克隆后直接跑，不需要改路径（脚本按自身位置解析 `../audition/`）：
+
 ```bash
-node tools/verify_v04.js     # 15 项断言：寻址、端序、互质、亮度递增、让位、glitch 落点
-node tools/smoke_v04.js      # 伪 AudioContext 驱动 30s，验证建图/调度/CRACK/STOP 不抛
-node tools/probe_hat.js      # hat 三种设计离线测峰值/RMS/频段占比
-node tools/gen_v04.mjs       # 编配规则探针（33/33）
+node tools/verify_v04.js       # 18 项断言：寻址、端序、互质、亮度递增、让位、glitch 栅格与位置分布
+node tools/smoke_v04.js        # 伪 AudioContext 驱动 30s：建图/调度/CRACK/STOP/快速重启不抛
+node tools/rng_crosscheck.js   # 独立 SHA-256(node:crypto)+PCG32+键编码，与页面 R32 对拍 4480 坐标
+node tools/probe_hat.js        # hat 三种设计离线测峰值/RMS/频段占比
+node tools/gen_v04.mjs         # 编配规则探针（33/33）
 ```
 
-`tools/verify_v04.js` 与 `tools/smoke_v04.js` 里各有一段桩代码（伪 document / 伪 AudioContext），只用于在没有浏览器的环境跑断言。
+三个检查脚本的退出码：0 = 全过，1 = 有失败，2 = 找不到文件。
+
+`tools/rng_crosscheck.js` 的 SHA-256 走 `node:crypto`、PCG32 与键编码按 contract 文本另写，页面里那套实现是另一份代码——**它才是"自己验自己"之外的那一条对照**。Golden Vector 打在同一脚本的输出里。
 
 ## RNG 契约要点（contract/）
 
@@ -57,6 +73,7 @@ node tools/gen_v04.mjs       # 编配规则探针（33/33）
 
 ## 已知缺口
 
-- 未做 Web Audio 实际渲染测量；hat 与各声部的频段占比来自 `tools/probe_hat.js` 的加法合成模型与专家脚本，未在浏览器内复测。
+- 未做 Web Audio 实际渲染测量（没有 headless Chrome 的 PCM 抓取）；hat 与各声部的频段占比来自 `tools/probe_hat.js` 的加法合成模型与专家脚本，未在浏览器内复测。`tools/verify_v04.js`、`tools/smoke_v04.js`、`tools/rng_crosscheck.js` 只证明代码路径与数值一致，**不证明听感**。
 - 听感结论全部待用户判定：这个仓库里没有任何音频文件。
 - 契约仍是 DRAFT，7 项待冻结（见 contract 文末）。
+- C++ / JavaScript 双向对照只做了 JavaScript 侧（`rng_crosscheck.js`）；C++ 侧实现尚未出生。

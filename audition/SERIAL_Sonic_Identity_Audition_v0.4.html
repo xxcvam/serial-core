@@ -354,24 +354,41 @@ function build(scheme){
       bars.push(ev);
     }
     PAT[sec.id]=bars;
+    GL[sec.id]=bars.map((_,bi)=>planGlitch(sec,bi));
   }
   return PAT;
 }
 
-/* Glitch bar 级计划：1/32 栅格（12 tick），只在 CLIMAX 全段与 BREAK 末小节 */
+/* Glitch bar 级计划：1/32 栅格（12 tick），只在 CLIMAX 全段与 BREAK 末小节。
+   旧版用 "取到 cap 个就 break"，故障事件永远堆在小节前部；现在先收集全部候选、
+   用 RNG 洗牌后按最小间距 24 tick 抽 cap 个，位置分布与小节前部无关。 */
 function planGlitch(sec,bar){
   const out=[];
   const on=(sec.id===3)||(sec.id===4&&bar===3);
   if(!on) return out;
-  const prob=sec.id===3?62:70, cap=sec.id===3?2:2;
+  const prob=sec.id===3?62:70, cap=3, minGap=24;
+  const cand=[];
   for(let t=0;t<TICKS_PER_BAR;t+=12){
     if((randomFor('glitch',sec.id,bar,t,PURPOSE.gate)%100)>=prob) continue;
+    cand.push(t);
+  }
+  for(let i=cand.length-1;i>0;i--){          /* Fisher-Yates，键只用 RNG，不用 Math.random */
+    const j=randomFor('glitch',sec.id,bar,cand[i],PURPOSE.mutation,i)%(i+1);
+    const tmp=cand[i]; cand[i]=cand[j]; cand[j]=tmp;
+  }
+  const keep=[];
+  for(const t of cand){
+    if(keep.length>=cap) break;
+    if(keep.some(k=>Math.abs(k-t)<minGap)) continue;
+    keep.push(t);
+  }
+  keep.sort((a,b)=>a-b);
+  for(const t of keep){
     const div=[12,16,24][randomFor('glitch',sec.id,bar,t,PURPOSE.timbre)%3];
     const lenT=(1+randomFor('glitch',sec.id,bar,t,PURPOSE.duration)%4)*12;
     const depth=(randomFor('glitch',sec.id,bar,t,PURPOSE.velocity)%100)/100*0.35;
-    const kind=(randomFor('glitch',sec.id,bar,t,PURPOSE.mutation)%100)<35?'stutter':'gate';
+    const kind=(randomFor('glitch',sec.id,bar,t,PURPOSE.mutation,1)%100)<35?'stutter':'gate';
     out.push({tick:t,div,lenTicks:Math.min(lenT,TICKS_PER_BAR-t),depth,kind});
-    if(out.length>=cap) break;
   }
   return out;
 }
@@ -380,8 +397,9 @@ function planGlitch(sec,bar){
    4. 音频图
    ============================================================ */
 let ctx=null, G=null, playing=false, timer=0, nextTime=0;
-let toneLP=null, master=null, duck=null, glitchGate=null;
+let toneLP=null, master=null, duck=null, glitchGate=null, crackGate=null;
 let scheme='A', synth='NEW', blind=false, loopMode='ALL', loopSec=1;
+let GL=[];                       /* GL[secId][bar] = bar 级 glitch 计划，构建期一次算完 */
 let hatScale=1, hatMode='SHORT';
 let blindPick=null, blindLog=[];
 let PAT_A=null, PAT_B=null, live=[], openHatGain=null;
@@ -429,8 +447,11 @@ function initAudio(){
   const drumBus=ctx.createGain();
   const drumComp=ctx.createDynamicsCompressor();  /* 鼓组 4:1 */
   drumComp.threshold.value=-18; drumComp.ratio.value=4; drumComp.attack.value=0.005; drumComp.release.value=0.12;
+  /* 两条独立总线门控：glitchGate 只由 glitch 事件驱动，crackGate 只由 CRACK 驱动，
+     两者串联但不共用参数，CRACK 松开不会把 glitch 的排程一起 cancel 掉 */
   glitchGate=ctx.createGain(); glitchGate.gain.value=1;
-  drumBus.connect(drumComp); drumComp.connect(glitchGate); glitchGate.connect(comp);
+  crackGate=ctx.createGain(); crackGate.gain.value=1;
+  drumBus.connect(drumComp); drumComp.connect(glitchGate); glitchGate.connect(crackGate); crackGate.connect(comp);
 
   const bassBus=ctx.createGain(); bassBus.gain.value=db(-9);
   duck=ctx.createGain(); duck.gain.value=1;
@@ -490,6 +511,7 @@ function panic(){
   if(G){ G.dlRet.gain.value=0; G.vRet.gain.value=0; }
   openHatGain=null;
   if(glitchGate) glitchGate.gain.value=1;
+  if(crackGate) crackGate.gain.value=1;
   if(duck) duck.gain.value=1;
 }
 
@@ -671,6 +693,8 @@ function vHat(t,v,open){
   }catch(e){} openHatGain=null; }
 }
 
+/* Bass：单正弦 + 低通 + 包络（v0.3 起沿用，用户已听感认可，不回到早期 Saw+Sub 结构）。
+   身份标签：SERIAL-BASS/SINE-55 — 后续讨论引用 Bass 音色一律指这一版。 */
 function vBass(t,ev){
   const o=ctx.createOscillator(),g=ctx.createGain(),lp=ctx.createBiquadFilter();
   o.type='sine'; o.frequency.value=ev.f;
@@ -765,9 +789,10 @@ function playStep(t){
   if(ev.bass&&solo.bass) vBass(t,ev.bass);
   if(ev.arp&&solo.arp) vArp(t,ev.arp);
   if(ev.lead&&solo.lead) vLead(t,ev.lead);
-  if(solo.glitch){
-    const plans=planGlitch(sec,pos.bar).filter(p=>Math.round(p.tick/STEP_TICKS)===pos.step);
-    for(const p of plans) vGlitch(t,p,ev);
+  /* Glitch：bar 起点一次性把整小节按真实 tick 排进去，不在每个 16 分步上重算 RNG */
+  if(solo.glitch&&pos.step===0){
+    const plan=(GL[sec.id]&&GL[sec.id][pos.bar])||[];
+    for(const g of plan) vGlitch(t+(g.tick/PPQ)*(60/BPM),g,ev);
   }
   paint(sec,pos.bar,pos.step);
 }
@@ -798,8 +823,9 @@ function tick(){
     advance();
   }
 }
+let runId=0;                     /* 生命周期 token：停止/重播竞态时旧回调自动失效 */
 function start(){
-  initAudio();
+  runId++; initAudio();
   if(ctx.state==='suspended') ctx.resume();
   PAT_A=PAT_A||build('A'); PAT_B=PAT_B||build('B');
   playing=true; orderIdx=0; pos={secIdx:0,bar:0,step:0};
@@ -815,12 +841,13 @@ function start(){
 }
 function stop(){
   if(!ctx) return;
+  const myRun=++runId;             /* 若 110ms 内又被 start()，旧回调看到 runId 变了就直接退出 */
   playing=false; clearInterval(timer); timer=0;
   const t=ctx.currentTime;
   master.gain.cancelScheduledValues(t);
   master.gain.setValueAtTime(master.gain.value,t);
   master.gain.linearRampToValueAtTime(0.0001,t+0.06);
-  setTimeout(()=>{ panic(); state('stopped'); },110);
+  setTimeout(()=>{ if(myRun!==runId) return; panic(); state('stopped'); },110);
 }
 
 /* ============================================================
@@ -904,9 +931,9 @@ function crackDown(){
   toneLP.frequency.cancelScheduledValues(t);
   toneLP.frequency.setTargetAtTime(420,t,0.01);
   if(duck){ duck.gain.cancelScheduledValues(t); duck.gain.setTargetAtTime(0.55,t,0.01); }
-  if(glitchGate){
-    glitchGate.gain.cancelScheduledValues(t);
-    for(let i=0;i<24;i++){ const tt=t+i*stepDur()*0.5; glitchGate.gain.setValueAtTime(0.15,tt); glitchGate.gain.setValueAtTime(1,tt+0.02); }
+  if(crackGate){
+    crackGate.gain.cancelScheduledValues(t);
+    for(let i=0;i<24;i++){ const tt=t+i*stepDur()*0.5; crackGate.gain.setValueAtTime(0.15,tt); crackGate.gain.setValueAtTime(1,tt+0.02); }
   }
 }
 function crackUp(){
@@ -914,7 +941,7 @@ function crackUp(){
   const t=ctx.currentTime;
   toneLP.frequency.setTargetAtTime(20000,t,0.12);
   if(duck) duck.gain.setTargetAtTime(1,t,0.05);
-  if(glitchGate){ glitchGate.gain.cancelScheduledValues(t); glitchGate.gain.setValueAtTime(1,t); }
+  if(crackGate){ crackGate.gain.cancelScheduledValues(t); crackGate.gain.setValueAtTime(1,t); }
 }
 function showLog(r){
   const el=$('log'); if(!el) return;
@@ -1021,6 +1048,17 @@ function selftest(){
     return other>0&&off6+other>0;
   })(),'step6 以外也有开镲');
 
+  /* GL：1/32 栅格、位置不偏置、小节内分布跨后半（GL[secId][bar] = 事件数组） */
+  const gAll=(function(){ const o=[]; for(const a of GL) for(const b of a||[]) for(const p of b||[]) o.push(p); return o; })();
+  push('glitch 计划落在 1/32 栅格',gAll.length>0&&gAll.every(p=>p.tick%12===0),gAll.length+' 事件 tick%12==0');
+  push('glitch 存在落在奇数 1/16 的 1/32 事件',gAll.filter(p=>p.tick%24!==0).length>0,
+    gAll.filter(p=>p.tick%24!==0).length+'/'+gAll.length+' 落在 1/32 半格');
+  push('glitch 位置不集中在小节前 1/4',(()=>{
+    if(!gAll.length) return false;
+    const front=gAll.filter(p=>p.tick<TICKS_PER_BAR/4).length;
+    return front/gAll.length<0.6;
+  })(),(function(){ const f=gAll.filter(p=>p.tick<TICKS_PER_BAR/4).length; return f+'/'+gAll.length; })());
+
   SEED=saveSeed;
   return {pass:res.every(x=>x.ok),results:res};
 }
@@ -1029,7 +1067,8 @@ function selftest(){
    8. 门面
    ============================================================ */
 window.SERIAL={selftest,R32,build,encodeKey,TRACK_ID,PURPOSE,DOMAIN,FORM04,ARP_CYCLE,
-  statsOf,get SEED(){return SEED;},set SEED(v){SEED=v;},randomFor,
+  statsOf,get SEED(){return SEED;},set SEED(v){SEED=v;},randomFor,planGlitch,
+  get GL(){return GL;},
   get PAT(){return(PAT_A||(PAT_A=build('A')))}};
 window.SERIAL.selftest=selftest;
 
