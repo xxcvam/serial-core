@@ -35,9 +35,9 @@ footer li{margin:3px 0}
 <div class="bar">
   <div class="grp"><button id="play">PLAY</button><button id="stop">STOP</button></div>
   <div class="grp"><span class="tag">SEED</span><input id="seed" value="A7F209C13B8ED614"><button id="reseed">APPLY</button></div>
-  <div class="grp"><span class="tag">SCHEME</span><button id="schA" class="on">A 保守</button><button id="schB">B 激进</button></div>
-<div class="grp"><span class="tag">LEAD 音色</span><button id="ldA" class="on">A 混合频谱</button><button id="ldB">B Pulse/FM</button><button id="ldC">C B+Saw</button></div>
-<div class="grp"><span class="tag">MELODY</span><button id="melCur" class="on">CURRENT</button><button id="melChord">CHORD-AWARE</button></div>
+  <div class="grp"><span class="tag">SCHEME</span><button id="schA">A 保守</button><button id="schB" class="on">B 激进</button></div>
+<div class="grp"><span class="tag">LEAD 音色</span><button id="ldA">A 混合频谱</button><button id="ldB">B Pulse/FM</button><button id="ldC" class="on">C B+Saw</button></div>
+<div class="grp"><span class="tag">MELODY</span><button id="melCur">CURRENT</button><button id="melChord" class="on">CHORD-AWARE</button></div>
 </div>
 
 <div class="bar">
@@ -448,8 +448,8 @@ function planGlitch(sec,bar){
    ============================================================ */
 let ctx=null, G=null, playing=false, timer=0, nextTime=0;
 let toneLP=null, master=null, duck=null, glitchGate=null, crackGate=null;
-let scheme='A', synth='NEW', blind=false, loopMode='ALL', loopSec=1;
-let leadVoice='A', melody='CURRENT';   /* 音色轴与旋律轴分开切换，互不耦合 */
+let scheme='B', synth='NEW', blind=false, loopMode='ALL', loopSec=1;
+let leadVoice='C', melody='CHORD';   /* 音色轴与旋律轴分开切换，互不耦合；默认值 = 用户已认可的组合 */
 let GL=[];                       /* GL[secId][bar] = bar 级 glitch 计划，构建期一次算完 */
 let hatScale=1, hatMode='SHORT';
 let blindPick=null, blindLog=[];
@@ -1244,10 +1244,13 @@ function selftest(){
     return front/gAll.length<0.6;
   })(),(function(){ const f=gAll.filter(p=>p.tick<TICKS_PER_BAR/4).length; return f+'/'+gAll.length; })());
 
-  /* 旋律轴（独立于音色轴）：CHORD-AWARE 的强音落在当小节和弦音上，且与 CURRENT 不同 */
-  const PW=build('B','CHORD');
-  push('MELODY 两轴可独立切换（CHORD 与 CURRENT 音高不同）',JSON.stringify(PB)!==JSON.stringify(PW),
-    '事件数 '+(function(){let a=0,b=0;for(const s of FORM04)for(let i=0;i<s.bars;i++)for(let t=0;t<16;t++){if(PB[s.id][i][t].lead)a++;if(PW[s.id][i][t].lead)b++;}return a+'/'+b;})());
+  /* 旋律轴（独立于音色轴）：CHORD-AWARE 的强音落在当小节和弦音上，且与 CURRENT 不同。
+     两条都显式按规则构建，不依赖当前默认值——默认值会随用户认可的配置变化。 */
+  const PCUR=build('B','CURRENT');
+  const PCH=build('B','CHORD');
+  push('MELODY 两轴可独立切换（CHORD 与 CURRENT 音高不同）',JSON.stringify(PCUR)!==JSON.stringify(PCH),
+    '事件数 '+(function(){let a=0,b=0;for(const s of FORM04)for(let i=0;i<s.bars;i++)for(let t=0;t<16;t++){if(PCUR[s.id][i][t].lead)a++;if(PCH[s.id][i][t].lead)b++;}return a+'/'+b;})());
+  push('MELODY 默认值与 PAT 一致',JSON.stringify(PB)===JSON.stringify(melody==='CHORD'?PCH:PCUR),'melody='+melody);
   push('MELODY=CHORD 强音锁当小节和弦音',(function(){
     let checked=0,bad=0;
     for(const sec of FORM04) for(let b=0;b<sec.bars;b++){
@@ -1255,7 +1258,7 @@ function selftest(){
       const chord=gbar<12?0:CHORD_LOOP[(gbar-12)%4];
       const cs=new Set(chordSet(VOICING[chord]).map(x=>((x%12)+12)%12));
       const evs=[];
-      for(let st=0;st<16;st++){ const e=PW[sec.id][b][st].lead; if(e) evs.push(e); }
+      for(let st=0;st<16;st++){ const e=PCH[sec.id][b][st].lead; if(e) evs.push(e); }
       evs.forEach((e,i)=>{
         const strong=i===0||i===evs.length-1||e.len>=1.0;
         if(!strong) return;
@@ -1270,7 +1273,7 @@ function selftest(){
       const gbar=FORM04.slice(0,FORM04.indexOf(sec)).reduce((a,s)=>a+s.bars,0)+bi;
       const chord=gbar<12?0:CHORD_LOOP[(gbar-12)%4];
       const cs=new Set(chordSet(VOICING[chord]).map(x=>((x%12)+12)%12));
-      const evs=[]; for(let st=0;st<16;st++){ const e=PW[sec.id][bi][st].lead; if(e) evs.push(e); }
+      const evs=[]; for(let st=0;st<16;st++){ const e=PCH[sec.id][bi][st].lead; if(e) evs.push(e); }
       evs.forEach((e,i)=>{ const strong=i===0||i===evs.length-1||e.len>=1.0; if(!strong) return; c++; if(!cs.has(((e.semi%12)+12)%12)) bad++; });
     }
     return c+' 强音，越界 '+bad;
