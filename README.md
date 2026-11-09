@@ -77,3 +77,42 @@ node tools/gen_v04.mjs         # 编配规则探针（33/33）
 - 听感结论全部待用户判定：这个仓库里没有任何音频文件。
 - 契约仍是 DRAFT，7 项待冻结（见 contract 文末）。
 - C++ / JavaScript 双向对照只做了 JavaScript 侧（`rng_crosscheck.js`）；C++ 侧实现尚未出生。
+
+
+## v0.4.2（分支 feat/lead-rise-v0.4.2，未合 main）
+
+LEAD 与 RISE 的结构性重修，按两位专家文档 + 用户四项更正落地。
+
+### 编配层
+- LEAD 落格改在**奇数 1/16 格**（`ODD_GRID`），与 arp 的八分偶数格物理互补，不再抢同一批格子。
+- `LEAD_CELLS` 扩为 HOLD/HEAD/HOOK/ROLL/LINK/PUSH，每个 cell 带 `len[]`/`acc[]` 数组；`PHRASE` 换成 M4/M6/M8/E4/E6/N4/N6/D4。
+- 每小节 cutoff 走 `sec.lcut[bar]` 曲线（GROOVE 1600→2000、RISE 1900→3000、CLIMAX 3200→3700、BREAK 1000→1150、RETURN 2800→1900），不再由段级常量 clamp 抹平。
+- 音高 = `PHRASE × 算子(T±n/R/I/O/RO) + loct`，末音 +15% 时长，重音 0.26+acc。
+
+### 合成层（vLead 重写）
+- 三支振荡器改成 **saw + square + triangle 三种不同频谱、无相位偏移**。原 0/120/240° 方案实测起音 20ms 基频 −16.5 dB（`tools/lead_phase_probe.mjs`），波峰更低但那是相消不是余量，已弃用。
+- 低通加入 keytrack `(f/440)^0.35` 与滤波包络（起音 ×2.2 → τ55ms 衰减到 cutBase）；`Q.value=0`（WebAudio lowpass 的 Q 单位是 dB）。
+- 包络 release 自适应 `clamp(dur*0.25, 18ms, 75ms)`，不再硬切。
+- sub 改同度正弦（0.18），去掉 f/2（原来侵占 220–392Hz 与 arp 抢空间）。
+- LEAD 独立发送：`leadRevSend 0.50`、`leadDlySend 0.22`，不再与 arp/glitch 共用 fxSend。
+
+### RISE
+- R1 噪声带通 Q2.5 400→9000Hz（段内一次）；R2 saw 110→440Hz + sine 55→110Hz（低电平 0.055/0.035，避免与 arp 220–784Hz 正面重叠）；R3 末小节末步 15ms 让位；R4 reverb 0.50→0.85、delay 0.22→0.10。
+
+### 真实 PCM 渲染（新增验收工装）
+`tools/pcm_render.mjs` 用本机 Chrome 的 CDP 驱动页面里新增的 `window.__renderPCM()`，在 `OfflineAudioContext` 里渲染整段混音并测量 peak/RMS/削波。零 npm 依赖。
+
+实测（Seed 1234567890123，Scheme A，44.1kHz，12s）：
+
+| 场景 | peak | RMS | 削波 |
+|---|---|---|---|
+| GROOVE | −5.61 dBFS | −18.95 dB | 0 |
+| CLIMAX | −2.68 dBFS | −17.77 dB | 0 |
+| BREAK（6s 窗口） | −5.11 dBFS | −25.37 dB | 0 |
+| Seed 20260101 / 777 / 4242424242 | −5.3 ~ −6.3 dBFS | −18.1 ~ −19.3 dB | 0 |
+
+单声部 peak（CLIMAX 段 12s）：kick 0.295 / snare 0.200 / hat 0.079 / bass 0.212 / arp 0.105 / lead 0.120 / glitch 0.375。
+
+### 已知代价
+- LEAD 移到奇数格后，arp 不再需要让位，GROOVE 的 arp 事件数由 58 变 64（+6）。这是解耦的直接结果，不是 bug；若要保住原来的 58 需人为挖掉 6 个落点，待用户裁定。
+- 仍无听感结论。以上全部是数据与 PCM 电平，**没有一个字来自耳朵**。

@@ -189,14 +189,20 @@ const VOICING=[
   [-2,2,5,7],    // G6
 ];
 const CHORD_LOOP=[0,1,2,3];
+const ODD_GRID=new Set([1,3,5,7,9,11,13,15]);
 const LEAD_CELLS={
-  HOLD:{steps:[7],len:8.0},
-  ANTE:{steps:[3,11],len:3.0},
-  RESP:{steps:[2,8,14],len:2.0},
-  PUSH:{steps:[1,5,9,13],len:1.6},
-  ROLL:{steps:[1,3,5,7,9,11,13,15],len:1.2},
+  HOLD:{steps:[7],len:[8.0],acc:[0.02]},
+  HEAD:{steps:[3,5,11,15],len:[0.5,0.5,0.5,1.5],acc:[0.02,0.05,0.03,0.08]},
+  HOOK:{steps:[1,3,5,9,11,15],len:[0.5,0.5,0.5,0.5,0.5,1.5],acc:[0.02,0.05,0.02,0.04,0.03,0.09]},
+  ROLL:{steps:[1,3,5,7,9,11,13,15],len:[0.4,0.4,0.4,0.4,0.4,0.4,0.4,0.9],acc:[0.02,0.04,0.02,0.04,0.02,0.05,0.03,0.10]},
+  LINK:{steps:[9,15],len:[0.5,1.5],acc:[0.03,0.07]},
+  PUSH:{steps:[1,5,9,13],len:[0.5,0.5,0.5,1.5],acc:[0.03,0.05,0.04,0.09]},
 };
-const PHRASE={A:[0,2,4,1],B:[4,3,2,0],C:[0,4,5,6],D:[6,4,3,2]};
+const PHRASE={
+  M4:[0,2,4,6], M6:[0,2,4,7,6,4], M8:[0,2,4,7,9,7,6,4],
+  E4:[4,6,7,4], E6:[4,7,9,7,6,4],
+  N4:[7,6,4,2], N6:[7,6,4,2,4,0], D4:[6,4,3,2],
+};
 function xform(degs,op){
   const d=degs.slice();
   switch(op){
@@ -224,35 +230,40 @@ const FORM04=[
   {id:1,name:'GROOVE',bars:8,density:88,
    arpMask:REP(S8,8),cut:[1700,1800,1900,2000,1850,1950,2050,2150],lift:REP(0,8),
    kick:REP(ON,8),snare:REP(ON,8),hat:REP(ON,8),glitch:REP(OFF,8),
-   cellsA:REP(null,8),cellsB:REP(null,8),
-   phA:REP('A',8),phB:REP('A',8),opA:REP('',8),opB:['','R','','T-1','','R','','T-1']},
+   cellsA:REP(null,8),cellsB:[null,null,null,null,'LINK','LINK','LINK','LINK'],
+   phA:REP('M4',8),phB:REP('M4',8),opA:REP('',8),opB:REP('',8),
+   lcut:[1600,1600,1600,1600,1700,1800,1900,2000],loct:REP(0,8)},
   {id:2,name:'RISE',bars:4,density:92,
    arpMask:REP(S16,4),cut:[2000,2100,2250,2400],lift:[0,0,0,1],
    kick:REP(ON,4),snare:REP(ON,4),hat:REP(ON,4),glitch:REP(OFF,4),
-   cellsA:['ANTE','ANTE','PUSH','PUSH'],cellsB:['ANTE','PUSH','PUSH','ROLL'],
-   phA:REP('C',4),phB:REP('C',4),
-   opA:['','T+1','T+2','T+2'],opB:['','T+1','T+2','T+2O']},
+   cellsA:['HEAD','HEAD','HEAD','PUSH'],cellsB:['HOOK','HOOK','HOOK','ROLL'],
+   phA:REP('M4',4),phB:['M6','M6','M6','M8'],
+   opA:['','T+1','T+2','T+2'],opB:['','T+1','T+2','O'],
+   lcut:[1900,2200,2600,3000],loct:REP(0,4)},
   {id:3,name:'CLIMAX',bars:8,density:100,
    arpMask:REP(FULL,8),cut:[2400,2500,2600,2500,2400,2500,2600,2500],lift:[0,0,0,1,0,0,0,1],
    kick:REP(ON,8),snare:REP(ON,8),hat:REP(ON,8),glitch:REP(ON,8),
-   cellsA:['RESP','PUSH','RESP','PUSH','RESP','PUSH','RESP','PUSH'],
-   cellsB:['RESP','PUSH','RESP','PUSH','RESP','PUSH','RESP','ROLL'],
-   phA:REP('B',8),phB:REP('B',8),
-   opA:['','','','T+1','','R','','T+2'],opB:['','I','','RO','','I','','RO']},
+   cellsA:REP('HEAD',8),
+   cellsB:['HOOK','HOOK','HOOK','HOOK','HOOK','HOOK','HOOK','ROLL'],
+   phA:['M4','M4','M4','E4','M4','M4','M4','E4'],phB:REP('E6',8),
+   opA:['','T-2','T+2','','','T-2','T+2',''],opB:['','I','','RO','','I','','RO'],
+   lcut:[3200,3300,3400,3500,3300,3400,3500,3700],loct:REP(0,8)},
   {id:4,name:'BREAK',bars:4,density:55,
    arpMask:[S4,S8,S12,FULL],cut:[1200,950,850,900],lift:REP(0,4),
    kick:[OFF,OFF,OFF,ON],snare:[OFF,OFF,OFF,ON],hat:[OFF,ON,OFF,ON],glitch:[OFF,OFF,OFF,ON],
    cellsA:['HOLD','HOLD',null,null],cellsB:['HOLD','HOLD',null,null],
-   phA:REP('D',4),phB:REP('D',4),opA:['','','',''],opB:['','','','']},
+   phA:['D4','E4','E4','E4'],phB:['D4','E4','E4','E4'],opA:['','','',''],opB:['','','',''],
+   lcut:[1000,1050,1100,1150],loct:REP(0,4)},
   {id:5,name:'RETURN',bars:8,density:92,
    arpMask:[S16,S16,S8,S8,S8,S8,S8,S8],
    cut:[2500,2400,2300,2250,2200,2150,2100,2050],lift:[0,0,0,0,0,0,0,1],
    kick:REP(ON,8),snare:REP(ON,8),hat:REP(ON,8),glitch:REP(OFF,8),
-   cellsA:['RESP','ANTE','RESP','ANTE','RESP','ANTE','RESP','ANTE'],
-   cellsB:['RESP','ANTE','PUSH','RESP','ANTE','RESP','PUSH','ANTE'],
-   phA:REP('B',8),phB:['B','A','D','B','A','B','D','A'],
-   opA:['','','T-1','T-1','','','T-1','T-1'],
-   opB:['R','','T-1','T-1','R','','T-1','T-1']},
+   cellsA:REP('HEAD',8),
+   cellsB:REP('HOOK',8),
+   phA:REP('N4',8),phB:REP('N6',8),
+   opA:['R','T-2','T-1','T-1','R','T-2','T-1','T-1'],
+   opB:['','','T-1','T-1','R','','T-1','T-1'],
+   lcut:[2800,2600,2400,2300,2200,2100,2000,1900],loct:REP(0,8)},
 ];
 const ARP_CYCLE={
   A:{0:[0,1,2],1:[0,2,1,3,2],2:[0,1,2,3,2],3:[0,3,2,1,3],4:[2,1,0],5:[3,1,2,0,1,3,2]},
@@ -278,24 +289,24 @@ function build(scheme){
 
       /* Lead 先写：应答优先占格 */
       const cells=scheme==='A'?sec.cellsA:sec.cellsB;
-      const cellName=cells?cells[bar]:null;
+      const cellName=cells?take(cells,bar):null;
       if(cellName){
         const cell=LEAD_CELLS[cellName];
-        const phs=scheme==='A'?sec.phA:sec.phB;
-        const ops=scheme==='A'?sec.opA:sec.opB;
-        const ph=phs?phs[bar]:'A';
-        const op=ops?ops[bar]:'';
+        const ph=take(scheme==='A'?sec.phA:sec.phB,bar)||'M4';
+        const op=take(scheme==='A'?sec.opA:sec.opB,bar)||'';
+        if(!PHRASE[ph]) throw new Error('unknown phrase '+ph);
         const degs=xform(PHRASE[ph],op);
         const n=cell.steps.length;
-        const cutRange={GROOVE:[1500,2400],RISE:[1600,2800],CLIMAX:[2000,3400],BREAK:[900,1150],RETURN:[1700,2600]}[sec.name]||[1200,2000];
+        const base=take(sec.lcut,bar)||1800;
+        const octShift=take(sec.loct,bar)||0;
         cell.steps.forEach((st,i)=>{
           const deg=degs[i%degs.length];
-          const semi=AEOLIAN[((deg%7)+7)%7]+12*Math.floor(deg/7);
-          const cut=i===n-1?Math.round(cutRange[1]*0.82)
-            :Math.round(cutRange[0]+(cutRange[1]-cutRange[0])*(n===1?1:i/(n-1)));
+          const semi=AEOLIAN[((deg%7)+7)%7]+12*Math.floor(deg/7)+octShift;
+          const last=i===n-1;
+          const cut=Math.round(base*(n===1?1:0.78+0.22*(i/(n-1))));
           leadOn[st]=1;
-          ev[st].lead={f:hz(440,semi),v:0.30+jitter('lead',sec.id,bar,st),
-            len:(i===n-1?cell.len*1.3:cell.len),cut,deg,semi};
+          ev[st].lead={f:hz(440,semi),v:0.26+take(cell.acc,i)+jitter('lead',sec.id,bar,st),
+            len:take(cell.len,i)*(last?1.15:1),cut,deg,semi,cell:cellName,op};
         });
       }
 
@@ -458,10 +469,10 @@ function initAudio(){
   bassBus.connect(duck); duck.connect(comp);
 
   const arpHP=ctx.createBiquadFilter(); arpHP.type='highpass'; arpHP.frequency.value=220; arpHP.Q.value=-6;
-  const arpBus=ctx.createGain(); arpBus.gain.value=db(-12);
+  const arpBus=ctx.createGain(); arpBus.gain.value=db(-7);
   arpBus.connect(arpHP); arpHP.connect(comp);
 
-  const leadBus=ctx.createGain(); leadBus.gain.value=db(-13.5); leadBus.connect(comp);
+  const leadBus=ctx.createGain(); leadBus.gain.value=db(-5); leadBus.connect(comp);
   const glitchBus=ctx.createGain(); glitchBus.gain.value=db(-16); glitchBus.connect(comp);
 
   /* FX：delay 3/16 = 321ms @140，锁 0.20 反馈，HP300/LP2200；reverb 1.0s + 26ms 预延迟 */
@@ -488,14 +499,18 @@ function initAudio(){
   const fxSend=ctx.createGain(); fxSend.gain.value=1;
   fxSend.connect(dl); fxSend.connect(pre);
 
-  G={comp,drumBus,drumComp,arpBus,leadBus,bassBus,glitchBus,fxSend,dlRet,vRet,
+  /* LEAD 独立发送：与 arp/glitch 共用一个 fxSend 会让湿声≈干声，且随段落无法单独自动化 */
+  const leadRevSend=ctx.createGain(); leadRevSend.gain.value=0.50; leadBus.connect(leadRevSend); leadRevSend.connect(pre);
+  const leadDlySend=ctx.createGain(); leadDlySend.gain.value=0.22; leadBus.connect(leadDlySend); leadDlySend.connect(dl);
+
+  G={comp,drumBus,drumComp,arpBus,leadBus,bassBus,glitchBus,fxSend,dlRet,vRet,leadRevSend,leadDlySend,
      noise:noiseBuffer(0x9E3779B9,1.0)};
 
   /* 声部总线静态电平阶梯：kick -6 / snare -9 / hat -11（实测 hat 峰值 −4.9 dBFS，高于 kick 若再低会被掩蔽） */
   G.kickOut=ctx.createGain(); G.kickOut.gain.value=db(-6); G.kickOut.connect(drumBus);
   G.snareOut=ctx.createGain(); G.snareOut.gain.value=db(-9); G.snareOut.connect(drumBus); G.snareOut.connect(fxSend);
   G.hatOut=ctx.createGain(); G.hatOut.gain.value=db(-11); G.hatOut.connect(drumBus);
-  G.arpBus.connect(fxSend); G.leadBus.connect(fxSend); G.glitchBus.connect(fxSend);
+  G.arpBus.connect(fxSend); G.glitchBus.connect(fxSend);
   master.gain.setTargetAtTime(0.72,ctx.currentTime+0.02,0.05);
 }
 
@@ -726,26 +741,34 @@ function vArp(t,ev){
 
 function vLead(t,ev){
   const mix=ctx.createGain(),lp=ctx.createBiquadFilter(),env=ctx.createGain();
-  const dur=ev.len*stepDur();
-  const det=[-7,0,7];
-  const oscs=det.map(c=>{
+  const dur=Math.max(0.04,ev.len*stepDur());
+  const rel=clamp(dur*0.25,0.018,0.075);
+  const stopAt=t+dur+rel*4;
+  /* 三种不同频谱、无相位偏移（0/120/240° 会谐波相消，实测起音基频 -16.5dB，见 tools/lead_phase_probe.mjs） */
+  const shape=[['sawtooth',0.34],['square',0.22],['triangle',0.30]];
+  const oscs=shape.map(([type,gain])=>{
     const o=ctx.createOscillator(),g=ctx.createGain();
-    o.type='sawtooth'; o.frequency.value=ev.f; o.detune.value=c;
-    g.gain.value=1/3;
+    o.type=type; o.frequency.value=ev.f;
+    g.gain.value=gain;
     o.connect(g); g.connect(mix);
-    track(o,t,t+dur+0.06); o.start(t); o.stop(t+dur+0.06);
+    track(o,t,stopAt); o.start(t); o.stop(stopAt);
     return o;
   });
+  /* 基频补强用同度正弦；不用 f/2，避免侵占 220–392Hz 与 arp 抢空间 */
   const sub=ctx.createOscillator(),sg=ctx.createGain();
-  sub.type='sine'; sub.frequency.value=ev.f/2; sg.gain.value=0.22;
+  sub.type='sine'; sub.frequency.value=ev.f; sg.gain.value=0.18;
   sub.connect(sg); sg.connect(mix);
-  track(sub,t,t+dur+0.06); sub.start(t); sub.stop(t+dur+0.06);
+  track(sub,t,stopAt); sub.start(t); sub.stop(stopAt);
 
-  lp.type='lowpass'; lp.frequency.value=clamp(ev.cut,1150,3800); lp.Q.value=-3;
+  const kt=Math.pow(Math.max(ev.f,55)/440,0.35);
+  const cutBase=clamp(ev.cut*kt,900,5200);
+  lp.type='lowpass'; lp.Q.value=0;
+  lp.frequency.setValueAtTime(clamp(cutBase*2.2,1200,7200),t);
+  lp.frequency.setTargetAtTime(cutBase,t+0.005,0.055);
   env.gain.setValueAtTime(0.0001,t);
-  env.gain.linearRampToValueAtTime(ev.v,t+0.008);
-  env.gain.setTargetAtTime(ev.v*0.66,t+0.012,0.09);
-  env.gain.setTargetAtTime(0.0001,t+Math.max(0.05,dur*0.85),0.06);
+  env.gain.linearRampToValueAtTime(ev.v,t+0.006);
+  env.gain.setTargetAtTime(ev.v*0.72,t+0.010,0.10);
+  env.gain.setTargetAtTime(0.0001,t+dur,rel);
   mix.connect(lp); lp.connect(env); env.connect(G.leadBus);
   return oscs;
 }
@@ -778,6 +801,38 @@ function vGlitch(t,ev,prevEv){
 /* ============================================================
    5. 调度
    ============================================================ */
+/* RISE 三层（R1 气流 / R2 扫频 / R4 空间），在段首一次性排入；R3 让位在 playStep 里 */
+function riseStart(t,sec){
+  const riseDur=sec.bars*STEPS*stepDur();
+  const end=t+riseDur+0.05;
+  const n=ctx.createBufferSource(); n.buffer=G.noise; n.loop=true;
+  const bp=ctx.createBiquadFilter(); bp.type='bandpass'; bp.Q.value=2.5;
+  bp.frequency.setValueAtTime(400,t);
+  bp.frequency.exponentialRampToValueAtTime(9000,t+riseDur);
+  const ng=ctx.createGain(); ng.gain.value=db(-30);
+  n.connect(bp); bp.connect(ng); ng.connect(G.leadBus);
+  track(n,t,end); n.start(t); n.stop(end);
+
+  const o1=ctx.createOscillator(); o1.type='sawtooth';
+  o1.frequency.setValueAtTime(110,t);
+  o1.frequency.exponentialRampToValueAtTime(440,t+riseDur);
+  const g1=ctx.createGain(); g1.gain.value=0.055;
+  o1.connect(g1); g1.connect(G.leadBus);
+  track(o1,t,end); o1.start(t); o1.stop(end);
+
+  const o2=ctx.createOscillator(); o2.type='sine';
+  o2.frequency.setValueAtTime(55,t);
+  o2.frequency.exponentialRampToValueAtTime(110,t+riseDur);
+  const g2=ctx.createGain(); g2.gain.value=0.035;
+  o2.connect(g2); g2.connect(G.leadBus);
+  track(o2,t,end); o2.start(t); o2.stop(end);
+
+  G.leadRevSend.gain.setValueAtTime(0.50,t);
+  G.leadRevSend.gain.linearRampToValueAtTime(0.85,t+riseDur);
+  G.leadDlySend.gain.setValueAtTime(0.22,t);
+  G.leadDlySend.gain.linearRampToValueAtTime(0.10,t+riseDur);
+}
+
 function playStep(t){
   const sec=FORM04[pos.secIdx];
   const barPat=(scheme==='A'?PAT_A:PAT_B)[sec.id];
@@ -789,6 +844,14 @@ function playStep(t){
   if(ev.bass&&solo.bass) vBass(t,ev.bass);
   if(ev.arp&&solo.arp) vArp(t,ev.arp);
   if(ev.lead&&solo.lead) vLead(t,ev.lead);
+  if(sec.name==='RISE'&&pos.bar===0&&pos.step===0) riseStart(t,sec);
+  /* R3：RISE 末小节末步 15ms 让位，让段落落点干净 */
+  if(sec.name==='RISE'&&pos.bar===sec.bars-1&&pos.step===15&&G&&solo.lead){
+    const lb=G.leadBus;
+    lb.gain.setValueAtTime(db(-5),t);
+    lb.gain.linearRampToValueAtTime(db(-30),t+0.005);
+    lb.gain.linearRampToValueAtTime(db(-5),t+0.015);
+  }
   /* Glitch：bar 起点一次性把整小节按真实 tick 排进去，不在每个 16 分步上重算 RNG */
   if(solo.glitch&&pos.step===0){
     const plan=(GL[sec.id]&&GL[sec.id][pos.bar])||[];
@@ -824,6 +887,48 @@ function tick(){
   }
 }
 let runId=0;                     /* 生命周期 token：停止/重播竞态时旧回调自动失效 */
+/* ---------- 离线 PCM 渲染（验收工装）：真实 WebAudio 图渲染到 ArrayBuffer ---------- */
+window.__renderPCM=async function(seedIn,schemeIn,seconds,startSec,soloOnly){
+  const sr=44100, dur=seconds||8;
+  const off=new OfflineAudioContext(2,Math.floor(sr*dur),sr);
+  ctx=null;G=null;master=null;glitchGate=null;crackGate=null;toneLP=null;duck=null;openHatGain=null;live=[];
+  glitchGateGainRef=null;
+  const realAC=window.AudioContext;
+  window.AudioContext=function(){return off;};
+  window.webkitAudioContext=function(){return off;};
+  initAudio();
+  window.AudioContext=realAC;
+  scheme=schemeIn||'A';
+  if(typeof seedIn==='number') SEED=BigInt(seedIn);
+  if(soloOnly){ for(const k in solo) solo[k]=false; solo[soloOnly]=true; }
+  master.gain.setValueAtTime(0.72,0);
+  PAT_A=build('A'); PAT_B=build('B');
+  const si=(typeof startSec==='number')?startSec:1;
+  pos={secIdx:si,bar:0,step:0}; orderIdx=si; loopMode='ALL';
+  const st=stepDur(); let t=0.02; const n=Math.floor(dur/st);
+  for(let i=0;i<n;i++){ playStep(t); t+=st; advance(); }
+  const buf=await off.startRendering();
+  const L=buf.getChannelData(0), R=buf.getChannelData(1);
+  let peak=0,sum=0,clip=0;
+  for(let i=0;i<L.length;i++){
+    const a=Math.abs(L[i]), b=Math.abs(R[i]);
+    const m=Math.max(a,b);
+    if(m>peak) peak=m;
+    if(m>=0.999) clip++;
+    sum+=(L[i]*L[i]+R[i]*R[i])/2;
+  }
+  const rms=Math.sqrt(sum/L.length);
+  const win=[];
+  const wl=Math.floor(sr*0.25);
+  for(let s=0;s+wl<=L.length;s+=wl){
+    let e=0; for(let i=s;i<s+wl;i++) e+=L[i]*L[i]+R[i]*R[i];
+    win.push(+(10*Math.log10(Math.max(e/(2*wl),1e-12))).toFixed(2));
+  }
+  return {peak:+peak.toFixed(4), peakDb:+(20*Math.log10(Math.max(peak,1e-9))).toFixed(2),
+    rms:+rms.toFixed(5), rmsDb:+(20*Math.log10(Math.max(rms,1e-9))).toFixed(2),
+    clip, windows:win, scheme, seed:String(SEED), section:FORM04[si].name};
+};
+
 function start(){
   runId++; initAudio();
   if(ctx.state==='suspended') ctx.resume();
