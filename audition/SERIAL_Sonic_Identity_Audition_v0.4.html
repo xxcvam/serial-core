@@ -36,6 +36,8 @@ footer li{margin:3px 0}
   <div class="grp"><button id="play">PLAY</button><button id="stop">STOP</button></div>
   <div class="grp"><span class="tag">SEED</span><input id="seed" value="A7F209C13B8ED614"><button id="reseed">APPLY</button></div>
   <div class="grp"><span class="tag">SCHEME</span><button id="schA" class="on">A 保守</button><button id="schB">B 激进</button></div>
+<div class="grp"><span class="tag">LEAD 音色</span><button id="ldA" class="on">A 混合频谱</button><button id="ldB">B Pulse/FM</button><button id="ldC">C B+Saw</button></div>
+<div class="grp"><span class="tag">MELODY</span><button id="melCur" class="on">CURRENT</button><button id="melChord">CHORD-AWARE</button></div>
 </div>
 
 <div class="bar">
@@ -277,15 +279,45 @@ const EU_BASS=euclid(16,5), EU_KICK=euclid(16,4), EU_HAT=euclid(16,8);
 const SNARE_STEPS=[4,12];
 const jitter=(tr,sec,bar,st)=>((randomFor(tr,sec,bar,st*24,PURPOSE.velocity,1)>>>8)/16777216-0.5)*0.04;
 const take=(arr,i)=>arr[Math.min(i,arr.length-1)];
+/* CHORD-AWARE 旋律轴：强音锁当小节和弦音，弱音留调内经过音，两者都做就近（voice leading） */
+function chordSet(V){
+  const out=[];
+  for(let o=-2;o<=2;o++) for(const v of V) out.push(v+12*o);
+  return out;
+}
+function snapTo(set,target,maxLeap){
+  let best=null,bd=Infinity;
+  for(const x of set){
+    const d=Math.abs(x-target);
+    if(d>maxLeap||d>=bd) continue;
+    bd=d; best=x;
+  }
+  return best===null?target:best;
+}
+function snapDiatonic(target,maxLeap){
+  let best=null,bd=Infinity;
+  for(let o=-2;o<=2;o++) for(const d of AEOLIAN){
+    const x=d+12*o, dd=Math.abs(x-target);
+    if(dd>maxLeap||dd>=bd) continue;
+    bd=dd; best=x;
+  }
+  return best===null?target:best;
+}
 
 /* ---------- PAT 生成（两种 Scheme） ---------- */
-function build(scheme){
+function build(scheme,melArg){
+  const mel=melArg||melody;
   const PAT=[];
   for(const sec of FORM04){
     const bars=[];
     for(let bar=0;bar<sec.bars;bar++){
       const ev=Array.from({length:16},()=>({}));
       const leadOn=new Uint8Array(16);
+
+      /* 和声上下文提到小节构建开始处：arp 与 lead 读同一个 chordId（两轴可独立切换） */
+      const gbar=FORM04.slice(0,FORM04.indexOf(sec)).reduce((a,s)=>a+s.bars,0)+bar;
+      const chord=gbar<12?0:CHORD_LOOP[(gbar-12)%4];
+      const V=VOICING[chord];
 
       /* Lead 先写：应答优先占格 */
       const cells=scheme==='A'?sec.cellsA:sec.cellsB;
@@ -299,14 +331,25 @@ function build(scheme){
         const n=cell.steps.length;
         const base=take(sec.lcut,bar)||1800;
         const octShift=take(sec.loct,bar)||0;
+        const cs=chordSet(V);
+        let prevSemi=null, prevWant=null;          /* Voice leading 用实际落点与轮廓意图 */
         cell.steps.forEach((st,i)=>{
           const deg=degs[i%degs.length];
-          const semi=AEOLIAN[((deg%7)+7)%7]+12*Math.floor(deg/7)+octShift;
+          const want=AEOLIAN[((deg%7)+7)%7]+12*Math.floor(deg/7)+octShift;
           const last=i===n-1;
-          const cut=Math.round(base*(n===1?1:0.78+0.22*(i/(n-1))));
+          let semi=want;
+          if(mel==='CHORD'){
+            const step=(prevWant===null)?0:(want-prevWant);
+            const target=(prevSemi===null)?want:prevSemi+step;
+            const strong=last||i===0||cell.len[i]>=1.0;
+            semi=strong?snapTo(cs,target,12):snapDiatonic(target,7);
+          }
+          semi=clamp(semi,-12,19);                 /* A3 … E6，不去抬最高音 */
           leadOn[st]=1;
+          const cut=Math.round(base*(n===1?1:0.78+0.22*(i/(n-1))));
           ev[st].lead={f:hz(440,semi),v:0.26+take(cell.acc,i)+jitter('lead',sec.id,bar,st),
-            len:take(cell.len,i)*(last?1.15:1),cut,deg,semi,cell:cellName,op};
+            len:take(cell.len,i)*(last?1.15:1),cut,deg,semi,cell:cellName,op,chord};
+          prevSemi=semi; prevWant=want;
         });
       }
 
@@ -315,10 +358,6 @@ function build(scheme){
       const N=popcount(mask);
       const cyc=(scheme==='A'?ARP_CYCLE.A:ARP_CYCLE.B)[sec.id];
       const L=cyc.length;
-      /* 和声：INTRO+GROOVE（0–11 小节）冻结 Am7 = v0.3 已验收状态；RISE 之后才开始走动 */
-      const gbar=FORM04.slice(0,FORM04.indexOf(sec)).reduce((a,s)=>a+s.bars,0)+bar;
-      const chord=gbar<12?0:CHORD_LOOP[(gbar-12)%4];
-      const V=VOICING[chord];
       const lift=take(sec.lift,bar);
       let ord=0;
       for(let st=0;st<16;st++){
@@ -410,6 +449,7 @@ function planGlitch(sec,bar){
 let ctx=null, G=null, playing=false, timer=0, nextTime=0;
 let toneLP=null, master=null, duck=null, glitchGate=null, crackGate=null;
 let scheme='A', synth='NEW', blind=false, loopMode='ALL', loopSec=1;
+let leadVoice='A', melody='CURRENT';   /* 音色轴与旋律轴分开切换，互不耦合 */
 let GL=[];                       /* GL[secId][bar] = bar 级 glitch 计划，构建期一次算完 */
 let hatScale=1, hatMode='SHORT';
 let blindPick=null, blindLog=[];
@@ -739,27 +779,48 @@ function vArp(t,ev){
   o.start(t); o.stop(t+dur+0.02); o2.start(t); o2.stop(t+dur+0.02);
 }
 
+/* Lead 三档对照音色，共用同一组事件、同一滤波包络与释放，只换振荡器结构：
+   A = 混合频谱（saw+square+triangle + 同度 sine 补强），v0.4.2 基准
+   B = Pulse（duty 32%）+ 2:1 FM + HP260，关 Sub
+   C = B + 受控 Saw 展开层（±6 cent）
+   响度差由 LEAD_TRIM 粗校，最终以 pcm 渲染的 RMS 对齐为准。 */
+const LEAD_TRIM={A:1.00,B:3.28,C:2.28};
+let pulseWave=null;
+function leadPulseWave(){
+  if(pulseWave) return pulseWave;
+  const N=48, real=new Float32Array(N), imag=new Float32Array(N), duty=0.32;
+  for(let k=1;k<N;k++) imag[k]=2*Math.sin(Math.PI*k*duty)/(Math.PI*k);
+  pulseWave=ctx.createPeriodicWave(real,imag,{disableNormalization:false});
+  return pulseWave;
+}
 function vLead(t,ev){
-  const mix=ctx.createGain(),lp=ctx.createBiquadFilter(),env=ctx.createGain();
+  const mode=leadVoice;
+  const oscs=[];
+  const mix=ctx.createGain(),lp=ctx.createBiquadFilter(),env=ctx.createGain(),hp=ctx.createBiquadFilter();
   const dur=Math.max(0.04,ev.len*stepDur());
   const rel=clamp(dur*0.25,0.018,0.075);
   const stopAt=t+dur+rel*4;
-  /* 三种不同频谱、无相位偏移（0/120/240° 会谐波相消，实测起音基频 -16.5dB，见 tools/lead_phase_probe.mjs） */
-  const shape=[['sawtooth',0.34],['square',0.22],['triangle',0.30]];
-  const oscs=shape.map(([type,gain])=>{
+  const trim=LEAD_TRIM[mode]||1;
+  const add=(node)=>{ track(node,t,stopAt); node.start(t); node.stop(stopAt); oscs.push(node); };
+  const g1=(type,gain,det)=>{
     const o=ctx.createOscillator(),g=ctx.createGain();
-    o.type=type; o.frequency.value=ev.f;
-    g.gain.value=gain;
-    o.connect(g); g.connect(mix);
-    track(o,t,stopAt); o.start(t); o.stop(stopAt);
-    return o;
-  });
-  /* 基频补强用同度正弦；不用 f/2，避免侵占 220–392Hz 与 arp 抢空间 */
-  const sub=ctx.createOscillator(),sg=ctx.createGain();
-  sub.type='sine'; sub.frequency.value=ev.f; sg.gain.value=0.18;
-  sub.connect(sg); sg.connect(mix);
-  track(sub,t,stopAt); sub.start(t); sub.stop(stopAt);
-
+    o.type=type; o.frequency.value=ev.f; if(det) o.detune.value=det;
+    g.gain.value=gain*trim;
+    o.connect(g); g.connect(mix); add(o);
+  };
+  if(mode==='A'){
+    /* 三种不同频谱、无相位偏移（0/120/240° 会谐波相消，实测起音基频 -16.5dB，见 tools/lead_phase_probe.mjs） */
+    g1('sawtooth',0.34); g1('square',0.22); g1('triangle',0.30);
+    g1('sine',0.18);                       /* 同度正弦补基频；不用 f/2，避免占 220–392Hz */
+  }else{
+    const car=ctx.createOscillator(),cg=ctx.createGain();
+    car.setPeriodicWave(leadPulseWave()); car.frequency.value=ev.f;
+    cg.gain.value=0.62*trim; car.connect(cg); cg.connect(mix); add(car);
+    const mod=ctx.createOscillator(),mg=ctx.createGain();
+    mod.frequency.value=ev.f*2; mg.gain.value=ev.f*0.45;
+    mod.connect(mg); mg.connect(car.frequency); add(mod);
+    if(mode==='C'){ g1('sawtooth',0.17,-6); g1('sawtooth',0.17,6); }
+  }
   const kt=Math.pow(Math.max(ev.f,55)/440,0.35);
   const cutBase=clamp(ev.cut*kt,900,5200);
   lp.type='lowpass'; lp.Q.value=0;
@@ -769,7 +830,13 @@ function vLead(t,ev){
   env.gain.linearRampToValueAtTime(ev.v,t+0.006);
   env.gain.setTargetAtTime(ev.v*0.72,t+0.010,0.10);
   env.gain.setTargetAtTime(0.0001,t+dur,rel);
-  mix.connect(lp); lp.connect(env); env.connect(G.leadBus);
+  if(mode==='A'){
+    mix.connect(lp);
+  }else{
+    hp.type='highpass'; hp.frequency.value=260; hp.Q.value=0.7;   /* dB */
+    mix.connect(hp); hp.connect(lp);
+  }
+  lp.connect(env); env.connect(G.leadBus);
   return oscs;
 }
 
@@ -900,7 +967,8 @@ window.__renderPCM=async function(seedIn,schemeIn,seconds,startSec,soloOnly){
   window.AudioContext=realAC;
   scheme=schemeIn||'A';
   if(typeof seedIn==='number') SEED=BigInt(seedIn);
-  if(soloOnly){ for(const k in solo) solo[k]=false; solo[soloOnly]=true; }
+  /* soloOnly 必须清场：否则上一次的 solo 会漏到这一次（曾导致"全混音"实测其实是单声部） */
+  for(const k in solo) solo[k]=soloOnly?k===soloOnly:true;
   master.gain.setValueAtTime(0.72,0);
   PAT_A=build('A'); PAT_B=build('B');
   const si=(typeof startSec==='number')?startSec:1;
@@ -995,6 +1063,18 @@ function bindUI(){
   on('play',start); on('stop',stop); on('reseed',()=>{ SEED=BigInt('0x'+($('seed').value||'0')); PAT_A=build('A'); PAT_B=build('B'); state('seed 已应用 '+SEED.toString(16).toUpperCase()); });
   on('schA',()=>{ scheme='A'; $('schA').className='on'; $('schB').className=''; state('scheme A（保守）'); });
   on('schB',()=>{ scheme='B'; $('schB').className='on'; $('schA').className=''; state('scheme B（激进）'); });
+  const setLead=(m,id)=>{ leadVoice=m; ['ldA','ldB','ldC'].forEach(k=>{ const b=$(k); if(b) b.className=(k===id?'on':''); });
+    state('LEAD 音色 '+m+'（'+(m==='A'?'混合频谱':m==='B'?'Pulse+2:1 FM，关 Sub，HP260':'B + 受控 Saw 展开')+'）'); };
+  on('ldA',()=>setLead('A','ldA'));
+  on('ldB',()=>setLead('B','ldB'));
+  on('ldC',()=>setLead('C','ldC'));
+  const setMel=(m)=>{ melody=m;
+    const c=$('melCur'),k=$('melChord');
+    if(c) c.className=(m==='CURRENT'?'on':''); if(k) k.className=(m==='CHORD'?'on':'');
+    PAT_A=build('A'); PAT_B=build('B');          /* 旋律轴独立重算 PAT，音色轴不动 PAT */
+    state('MELODY '+m+'（'+(m==='CURRENT'?'调式级数，v0.4 原规则':'强音锁和弦音 + voice leading')+'）'); };
+  on('melCur',()=>setMel('CURRENT'));
+  on('melChord',()=>setMel('CHORD'));
   on('synNew',()=>{ synth='NEW'; blind=false; mark('synNew'); state(synthLabel()); });
   on('synOld',()=>{ synth='OLD'; blind=false; mark('synOld'); state(synthLabel()); });
   on('synNeu',()=>{ synth='NEU'; blind=false; mark('synNeu'); state(synthLabel()); });
@@ -1164,6 +1244,43 @@ function selftest(){
     return front/gAll.length<0.6;
   })(),(function(){ const f=gAll.filter(p=>p.tick<TICKS_PER_BAR/4).length; return f+'/'+gAll.length; })());
 
+  /* 旋律轴（独立于音色轴）：CHORD-AWARE 的强音落在当小节和弦音上，且与 CURRENT 不同 */
+  const PW=build('B','CHORD');
+  push('MELODY 两轴可独立切换（CHORD 与 CURRENT 音高不同）',JSON.stringify(PB)!==JSON.stringify(PW),
+    '事件数 '+(function(){let a=0,b=0;for(const s of FORM04)for(let i=0;i<s.bars;i++)for(let t=0;t<16;t++){if(PB[s.id][i][t].lead)a++;if(PW[s.id][i][t].lead)b++;}return a+'/'+b;})());
+  push('MELODY=CHORD 强音锁当小节和弦音',(function(){
+    let checked=0,bad=0;
+    for(const sec of FORM04) for(let b=0;b<sec.bars;b++){
+      const gbar=FORM04.slice(0,FORM04.indexOf(sec)).reduce((a,s)=>a+s.bars,0)+b;
+      const chord=gbar<12?0:CHORD_LOOP[(gbar-12)%4];
+      const cs=new Set(chordSet(VOICING[chord]).map(x=>((x%12)+12)%12));
+      const evs=[];
+      for(let st=0;st<16;st++){ const e=PW[sec.id][b][st].lead; if(e) evs.push(e); }
+      evs.forEach((e,i)=>{
+        const strong=i===0||i===evs.length-1||e.len>=1.0;
+        if(!strong) return;
+        checked++;
+        if(!cs.has(((e.semi%12)+12)%12)) bad++;
+      });
+    }
+    return checked>0&&bad===0;
+  })(),(function(){
+    let c=0,bad=0;
+    for(const sec of FORM04) for(let bi=0;bi<sec.bars;bi++){
+      const gbar=FORM04.slice(0,FORM04.indexOf(sec)).reduce((a,s)=>a+s.bars,0)+bi;
+      const chord=gbar<12?0:CHORD_LOOP[(gbar-12)%4];
+      const cs=new Set(chordSet(VOICING[chord]).map(x=>((x%12)+12)%12));
+      const evs=[]; for(let st=0;st<16;st++){ const e=PW[sec.id][bi][st].lead; if(e) evs.push(e); }
+      evs.forEach((e,i)=>{ const strong=i===0||i===evs.length-1||e.len>=1.0; if(!strong) return; c++; if(!cs.has(((e.semi%12)+12)%12)) bad++; });
+    }
+    return c+' 强音，越界 '+bad;
+  })());
+  push('LEAD 三档不改动事件（音色轴与编配轴解耦）',(function(){
+    const before=JSON.stringify(build('A','CHORD'));
+    const keep=leadVoice; leadVoice='C'; const after=JSON.stringify(build('A','CHORD')); leadVoice=keep;
+    return before===after;
+  })());
+
   SEED=saveSeed;
   return {pass:res.every(x=>x.ok),results:res};
 }
@@ -1174,6 +1291,9 @@ function selftest(){
 window.SERIAL={selftest,R32,build,encodeKey,TRACK_ID,PURPOSE,DOMAIN,FORM04,ARP_CYCLE,
   statsOf,get SEED(){return SEED;},set SEED(v){SEED=v;},randomFor,planGlitch,
   get GL(){return GL;},
+  get leadVoice(){return leadVoice;},set leadVoice(v){leadVoice=v;},
+  get melody(){return melody;},set melody(v){melody=v;},
+  buildWithMel:(sch,mel)=>build(sch,mel),
   get PAT(){return(PAT_A||(PAT_A=build('A')))}};
 window.SERIAL.selftest=selftest;
 
