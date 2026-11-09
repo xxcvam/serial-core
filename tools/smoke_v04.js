@@ -44,10 +44,11 @@ class FakeCtx {
   resume() { this.state = 'running'; return Promise.resolve(); }
   createGain() { return node(); }
   createBiquadFilter() { return node({ type: 'lowpass' }); }
-  createOscillator() { return node({ type: 'sine' }); }
+  createOscillator() { return node({ type: 'sine', setPeriodicWave() {} }); }
   createBufferSource() { return node(); }
   createDelay() { return node(); }
   createConvolver() { return node(); }
+  createPeriodicWave() { return { _wave: true }; }
   createDynamicsCompressor() { return node(); }
   createWaveShaper() { return node({ curve: null, oversample: 'none' }); }
   createBuffer(ch, len, sr) {
