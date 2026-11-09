@@ -15,14 +15,14 @@ tools/      验证脚本与黄金向量
 
 ## audition/ 版本关系
 
+仓库只保留当前版本，旧试听版（Prototype v0.1 / v0.2 / Audition v0.3）已按用户要求移除，避免打开错文件。
+历史缺陷与改动记录见下方 v0.4.1 一节与 `docs/`。
+
 | 文件 | 状态 | 说明 |
 |---|---|---|
-| `SERIAL_Sonic_Identity_Prototype_v0.1.html` | 归档 | 首版；Snare/Hat 不触发、Sub 无包络、全声部共享 trackId、SHA-256 字节序错 |
-| `SERIAL_Sonic_Identity_v0.2.html` | 归档 | 修上述缺陷；Arp 改八步动机锁单八度；CRACK 改按住式 |
-| `SERIAL_Sonic_Identity_Audition_v0.3.html` | 归档 | 合并外部 Audition 的鼓与和声；14→10 项自测通过 |
 | `SERIAL_Sonic_Identity_Audition_v0.4.html` | **当前** | 鼓组全部重做（909 式 hat）+ 编配返修（和声走动、互质旋转、LEAD_CELLS/PHRASE/算子）+ 混音链路 |
 
-`v0.4` 里 `SYNTH` 三档（v0.4 新鼓 / v0.3 旧鼓 / 中性替换）与 `SCHEME A/B` 是给对照实验用的，不是产品分支。
+`v0.4` 里 `SYNTH` 三档（新鼓 / 旧鼓 / 中性替换）与 `SCHEME A/B` 是给对照实验用的，不是产品分支。
 
 ### v0.4.1 修了什么（在 v0.4 文件内）
 
