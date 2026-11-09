@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>SERIAL · Sonic Identity Prototype v0.1</title>
+<style>
+  :root{
+    --bg:#0a0a0b; --panel:#121214; --line:#232327; --dim:#6b6b74;
+    --tx:#e8e8ea; --on:#c9ff4a; --on2:#4ad2ff; --hot:#ff5c3a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+       font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       -webkit-font-smoothing:antialiased}
+  .wrap{max-width:760px;margin:0 auto;padding:22px 18px 40px}
+  h1{font-size:13px;letter-spacing:.22em;text-transform:uppercase;margin:0 0 2px;color:var(--tx)}
+  .sub{color:var(--dim);font-size:11px;letter-spacing:.08em;margin-bottom:18px}
+  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+  input{background:var(--panel);border:1px solid var(--line);color:var(--tx);
+        padding:7px 9px;font:inherit;letter-spacing:.12em;width:190px;border-radius:3px}
+  input:focus{outline:none;border-color:var(--on)}
+  button{background:var(--panel);border:1px solid var(--line);color:var(--tx);
+         padding:7px 14px;font:inherit;letter-spacing:.1em;cursor:pointer;border-radius:3px}
+  button:hover{border-color:var(--dim);color:#fff}
+  button.on{border-color:var(--on);color:var(--on)}
+  #crack{border-color:#3a1f18;color:#ff8a72}
+  #crack:active{background:#2a120c}
+  .meta{display:flex;gap:16px;color:var(--dim);font-size:11px;
+        letter-spacing:.1em;margin-bottom:16px;min-height:15px}
+  .meta b{color:var(--on2);font-weight:400}
+  .form{display:flex;gap:2px;margin-bottom:16px}
+  .seg{flex:1;text-align:center;padding:5px 0;font-size:10px;letter-spacing:.12em;
+       color:var(--dim);border-top:2px solid var(--line)}
+  .seg.act{color:var(--on);border-top-color:var(--on)}
+  .grid{border-top:1px solid var(--line)}
+  .row{display:flex;align-items:center;border-bottom:1px solid var(--line)}
+  .lbl{width:74px;font-size:10px;letter-spacing:.12em;color:var(--dim);flex:none}
+  .cells{display:flex;flex:1;gap:2px;padding:3px 0}
+  .c{flex:1;height:17px;background:#151517;border-radius:2px;position:relative}
+  .c.beat{background:#1b1b1e}
+  .c.hit{background:#2c3a10}
+  .c.hit.on2{background:#12333c}
+  .c.cur{outline:1px solid var(--on);outline-offset:0}
+  .c.hit.cur{background:var(--on)}
+  .note{color:var(--dim);font-size:11px;line-height:1.7;margin-top:18px;
+        border-left:1px solid var(--line);padding-left:12px}
+  .note b{color:#9a9aa4;font-weight:400}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SERIAL / Sonic Identity Prototype</h1>
+  <div class="sub">v0.1 · by-ear test build · 非 Core 实现</div>
+
+  <div class="bar">
+    <input id="seed" value="A7F209C13B8ED614" spellcheck="false" maxlength="16">
+    <button id="play">PLAY</button>
+    <button id="stop">STOP</button>
+    <button id="crack">CRACK</button>
+  </div>
+
+  <div class="meta">
+    <span>BPM <b id="bpm">140</b></span>
+    <span>SECTION <b id="sec">—</b></span>
+    <span>BAR <b id="bar">—</b></span>
+    <span>TICK <b id="tick">—</b></span>
+  </div>
+
+  <div class="form" id="formbar"></div>
+  <div class="grid" id="grid"></div>
+
+  <div class="note">
+    <b>听什么：</b>INTRO 只有琶音，GROOVE 落 Kick/Bass，RISE 进 Lead，CLIMAX 全开，
+    BREAK 只剩 Glitch 与和声残响，RETURN 主题回归。<br>
+    <b>确定性：</b>同一个 Seed 每次都生成逐位相同的音高、力度、时值、音色选择。
+    换 Seed 只换音乐，不换规则。<br>
+    <b>同 Seed 跨端：</b>本页只保证事件与参数的确定性，不保证波形逐采样一致（DSP 实现差异）。
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   1. SHA-256（同步，无 secure-context 依赖）
+   ============================================================ */
+const SHA256 = (() => {
+  const K = new Uint32Array([
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+  ]);
+  const rotr = (x,n) => (x>>>n)|(x<<(32-n));
+  return function(bytes){
+    const H = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
+                               0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+    const l = bytes.length;
+    const total = Math.ceil((l+9)/64)*64;
+    const buf = new Uint8Array(total);
+    buf.set(bytes); buf[l] = 0x80;
+    const dv0 = new DataView(buf.buffer);
+    dv0.setUint32(total-8, Math.floor(l/536870912), false);
+    dv0.setUint32(total-4, (l*8)>>>0, false);
+    const w = new Uint32Array(64);
+    for (let off=0; off<total; off+=64){
+      for (let i=0;i<16;i++) w[i] = dv0.getUint32(off+i*4, false);
+      for (let i=16;i<64;i++){
+        const s0 = rotr(w[i-15],7)^rotr(w[i-15],18)^(w[i-15]>>>3);
+        const s1 = rotr(w[i-2],17)^rotr(w[i-2],19)^(w[i-2]>>>10);
+        w[i] = (w[i-16]+s0+w[i-7]+s1)|0;
+      }
+      let a=H[0],b=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];
+      for (let i=0;i<64;i++){
+        const S1 = rotr(e,6)^rotr(e,11)^rotr(e,25);
+        const ch = (e&f)^(~e&g);
+        const t1 = (h + S1 + ch + K[i] + w[i])|0;
+        const S0 = rotr(a,2)^rotr(a,13)^rotr(a,22);
+        const maj = (a&b)^(a&c)^(b&c);
+        const t2 = (S0 + maj)|0;
+        h=g; g=f; f=e; e=(d+t1)|0; d=c; c=b; b=a; a=(t1+t2)|0;
+      }
+      H[0]=(H[0]+a)|0; H[1]=(H[1]+b)|0; H[2]=(H[2]+c)|0; H[3]=(H[3]+d)|0;
+      H[4]=(H[4]+e)|0; H[5]=(H[5]+f)|0; H[6]=(H[6]+g)|0; H[7]=(H[7]+h)|0;
+    }
+    return new Uint8Array(H.buffer.slice(0));
+  };
+})();
+
+/* ============================================================
+   2. PCG32 + 48 字节定长寻址键（SERIALM/0.2）
+   ============================================================ */
+const MUL=6364136223846793005n, INC=1442695040888963407n, MASK=(1n<<64n)-1n;
+const MAGIC=[..."SERIALM/0.2"].map(c=>c.charCodeAt(0)); MAGIC.push(0); // 12 bytes: ASCII + 0x00
+const DOMAIN={music:1,visual:2,card:3};
+const PURPOSE={gate:1,pitch:2,velocity:3,duration:4,probability:5,timbre:6,eventId:7,mutation:8};
+
+function pcgNext(s){
+  const old = s.state;
+  s.state = (old*MUL + s.inc) & MASK;
+  const x = Number((((old>>18n)^old)>>27n) & 0xFFFFFFFFn);
+  const rot = Number(old>>59n) & 31;
+  return ((x>>>rot) | (x<<((-rot)&31))) >>> 0;
+}
+function pcgSeed(initstate, initseq){
+  const s = { state:0n, inc: ((initseq<<1n)|1n) & MASK };
+  pcgNext(s);
+  s.state = (s.state + initstate) & MASK;
+  pcgNext(s);
+  return s;
+}
+
+function encodeKey(k){
+  const b = new Uint8Array(48);
+  b.set(MAGIC, 0);
+  const dv = new DataView(b.buffer);
+  dv.setBigUint64(12, k.seed, true);
+  dv.setUint16(20, k.generatorVersion, true);
+  dv.setUint8(22, k.domain);
+  dv.setUint16(23, k.trackId, true);
+  dv.setUint16(25, k.sectionId, true);
+  dv.setUint32(27, k.localBar, true);
+  dv.setBigUint64(31, BigInt(k.tick), true);
+  dv.setUint8(39, k.purpose);
+  dv.setUint32(40, k.attempt, true);
+  dv.setUint32(44, 0, true);
+  return b;
+}
+
+function R32(seed, trackId, sectionId, localBar, tick, purpose, attempt=0, domain=DOMAIN.music){
+  const d = SHA256(encodeKey({
+    seed, generatorVersion:1, domain, trackId, sectionId,
+    localBar, tick, purpose, attempt
+  }));
+  const dv = new DataView(d.buffer, d.byteOffset, 32);
+  const st = pcgSeed(dv.getBigUint64(0,true), dv.getBigUint64(8,true)|1n);
+  return pcgNext(st);
+}
+
+/* ============================================================
+   3. 时间与 Form
+   ============================================================ */
+const PPQ=96, TICKS_PER_BAR=PPQ*4, STEP_TICKS=24, STEPS=16;
+const BPM=140;
+
+const FORM=[
+  {id:0,name:'INTRO', bars:2, density:70,  cutoff:1300, tracks:{kick:0,bass:0,arp:1,perc:0,lead:0,glitch:0}},
+  {id:1,name:'GROOVE',bars:2, density:88,  cutoff:2100, tracks:{kick:1,bass:1,arp:1,perc:1,lead:0,glitch:0}},
+  {id:2,name:'RISE',  bars:2, density:92,  cutoff:2600, tracks:{kick:1,bass:1,arp:1,perc:1,lead:1,glitch:0}},
+  {id:3,name:'CLIMAX',bars:2, density:100, cutoff:3400, tracks:{kick:1,bass:1,arp:1,perc:1,lead:1,glitch:1}},
+  {id:4,name:'BREAK', bars:1, density:55,  cutoff:900,  tracks:{kick:0,bass:0,arp:1,perc:0,lead:0,glitch:1}},
+  {id:5,name:'RETURN',bars:2, density:92,  cutoff:2900, tracks:{kick:1,bass:1,arp:1,perc:1,lead:1,glitch:0}}
+];
+// 播放顺序：整段一遍，之后 GROOVE..RETURN 循环
+const PLAY_ORDER=[0,1,2,3,4,5];
+
+const A_MINOR=[0,2,3,5,7,8,10];
+const AM7=[0,3,7,10];
+const hz=(root,semi)=> root*Math.pow(2,semi/12);
+
+/* Euclidean：命中落在 0,4,8,12（不是 3,7,11,15） */
+function euclid(n,k){
+  const p=new Uint8Array(n); let bucket=0;
+  for(let i=0;i<n;i++){
+    bucket+=k;
+    if(bucket>=n){ bucket-=n; p[(i+1)%n]=1; }
+  }
+  return p;
+}
+const EU={
+  kick:euclid(16,4),                       // 0,4,8,12
+  snare:(()=>{const a=new Uint8Array(16); a[4]=1; a[12]=1; return a;})(), // 反拍 2、4
+  hat:euclid(16,8),
+  bass:euclid(16,5), lead:euclid(16,3)
+};
+
+/* ============================================================
+   4. 生成：一次 Seed → 整张 PAT（不在播放路径里算哈希）
+   ============================================================ */
+let SEED=BigInt('0x'+document.getElementById('seed').value);
+const PAT=[];
+
+function build(){
+  PAT.length=0;
+  for(const sec of FORM){
+    const bars=[];
+    for(let bar=0; bar<sec.bars; bar++){
+      const steps=[];
+      for(let st=0; st<STEPS; st++){
+        const tick=st*STEP_TICKS;
+        const R=(pid,att=0)=>R32(SEED, 0, sec.id, bar, tick, pid, att);
+        const ev={};
+
+        if(sec.tracks.kick){
+          const g=R(PURPOSE.gate);
+          if(EU.kick[st] && (g%100) < 100) ev.kick = 0.85 + (R(PURPOSE.velocity)%30)/100;
+        }
+        if(sec.tracks.snare){
+          if(EU.snare[st]) ev.snare = 0.5 + (R(PURPOSE.velocity)%30)/100;
+        }
+        if(sec.tracks.hat){
+          if(EU.hat[st] && (R(PURPOSE.gate)%100) < 78)
+            ev.hat = (st%4===2?0.34:0.2) + (R(PURPOSE.velocity)%20)/100;
+        }
+        if(sec.tracks.bass && EU.bass[st]){
+          const g=R(PURPOSE.gate);
+          if((g%100) < sec.density){
+            const deg=R(PURPOSE.pitch)%5;
+            const mov=[0,0,0,3,5,7,10][deg];
+            ev.bass={ f:hz(55,mov), v:0.55+(R(PURPOSE.velocity)%25)/100,
+                      len:(st%2===0)?2.2:1.4 };
+          }
+        }
+        if(sec.tracks.arp && (R(PURPOSE.gate)%100) < 92){
+          const idx=R(PURPOSE.pitch)%4;
+          const oc=(R(PURPOSE.timbre)%3)*12;
+          ev.arp={ f:hz(220, AM7[idx]+oc), v:0.16+(R(PURPOSE.velocity)%28)/100,
+                   len:0.9 };
+        }
+        if(sec.tracks.lead && EU.lead[st]){
+          const g=R(PURPOSE.gate);
+          if((g%100) < sec.density){
+            const idx=R(PURPOSE.pitch)%7;
+            const oc=(R(PURPOSE.timbre)%2)*12;
+            ev.lead={ f:hz(440, A_MINOR[idx]+oc), v:0.3+(R(PURPOSE.velocity)%28)/100,
+                      len:2.6+(R(PURPOSE.duration)%3)*1.3 };
+          }
+        }
+        if(sec.tracks.glitch && (R(PURPOSE.gate)%100) < (sec.id===4?70:26)){
+          ev.glitch={ v:0.22+(R(PURPOSE.velocity)%30)/100,
+                      rate:0.5+(R(PURPOSE.timbre)%22)/10 };
+        }
+        steps.push(ev);
+      }
+      bars.push(steps);
+    }
+    PAT[sec.id]=bars;
+  }
+}
+
+/* ============================================================
+   5. 音频图
+   ============================================================ */
+let ctx=null, master, drumBus, bassBus, arpBus, leadBus, fxBus, delay, verb;
+let noiseBuf;
+
+function initAudio(){
+  if(ctx) return;
+  ctx = new (window.AudioContext||window.webkitAudioContext)();
+  master = ctx.createGain(); master.gain.value=0.85;
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value=-12; comp.knee.value=12; comp.ratio.value=3.2;
+  comp.attack.value=0.004; comp.release.value=0.16;
+  master.connect(comp).connect(ctx.destination);
+
+  drumBus=ctx.createGain(); drumBus.gain.value=0.9; drumBus.connect(master);
+  bassBus=ctx.createGain(); bassBus.gain.value=0.55; bassBus.connect(master);
+  arpBus =ctx.createGain(); arpBus.gain.value=0.5;  arpBus.connect(master);
+  leadBus=ctx.createGain(); leadBus.gain.value=0.34; leadBus.connect(master);
+
+  delay=ctx.createDelay(1.0); delay.delayTime.value=(60/BPM)*(3/8);
+  const fb=ctx.createGain(); fb.gain.value=0.34;
+  const dlp=ctx.createBiquadFilter(); dlp.type='lowpass'; dlp.frequency.value=2600;
+  delay.connect(dlp).connect(fb).connect(delay);
+  delay.connect(master);
+
+  verb=ctx.createConvolver();
+  const len=Math.floor(ctx.sampleRate*1.7);
+  const ir=ctx.createBuffer(2,len,ctx.sampleRate);
+  for(let ch=0;ch<2;ch++){
+    const d=ir.getChannelData(ch);
+    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3.1);
+  }
+  verb.buffer=ir;
+  const vg=ctx.createGain(); vg.gain.value=0.22;
+  verb.connect(vg).connect(master);
+
+  arpBus.connect(delay); leadBus.connect(delay);
+  leadBus.connect(verb); arpBus.connect(verb);
+  fxBus=ctx.createGain(); fxBus.gain.value=0.5; fxBus.connect(master); fxBus.connect(delay);
+
+  noiseBuf=ctx.createBuffer(1, ctx.sampleRate*2, ctx.sampleRate);
+  const nd=noiseBuf.getChannelData(0);
+  for(let i=0;i<nd.length;i++) nd[i]=Math.random()*2-1;
+}
+
+function noise(t,dur){
+  const s=ctx.createBufferSource(); s.buffer=noiseBuf;
+  s.loop=true; s.start(t); s.stop(t+dur); return s;
+}
+
+/* --- 音色 --- */
+function vKick(t,v){
+  const o=ctx.createOscillator(), g=ctx.createGain();
+  o.type='sine';
+  o.frequency.setValueAtTime(155,t);
+  o.frequency.exponentialRampToValueAtTime(44,t+0.085);
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(v,t+0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.42);
+  o.connect(g).connect(drumBus); o.start(t); o.stop(t+0.45);
+
+  const n=noise(t,0.02), hp=ctx.createBiquadFilter(), ng=ctx.createGain();
+  hp.type='highpass'; hp.frequency.value=2200;
+  ng.gain.setValueAtTime(v*0.25,t);
+  ng.gain.exponentialRampToValueAtTime(0.0001,t+0.018);
+  n.connect(hp).connect(ng).connect(drumBus);
+}
+
+function vSnare(t,v){
+  const n=noise(t,0.2), bp=ctx.createBiquadFilter(), g=ctx.createGain();
+  bp.type='bandpass'; bp.frequency.value=1750; bp.Q.value=0.7;
+  g.gain.setValueAtTime(v*0.55,t);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.16);
+  n.connect(bp).connect(g).connect(drumBus);
+
+  const o=ctx.createOscillator(), og=ctx.createGain();
+  o.type='triangle'; o.frequency.setValueAtTime(186,t);
+  o.frequency.exponentialRampToValueAtTime(120,t+0.07);
+  og.gain.setValueAtTime(v*0.3,t);
+  og.gain.exponentialRampToValueAtTime(0.0001,t+0.08);
+  o.connect(og).connect(drumBus); o.start(t); o.stop(t+0.1);
+}
+
+function vHat(t,v){
+  const n=noise(t,0.09), hp=ctx.createBiquadFilter(), g=ctx.createGain();
+  hp.type='highpass'; hp.frequency.value=7600;
+  g.gain.setValueAtTime(v,t);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.055);
+  n.connect(hp).connect(g).connect(drumBus);
+}
+
+function vBass(t,f,v,len){
+  const o=ctx.createOscillator(), o2=ctx.createOscillator();
+  const lp=ctx.createBiquadFilter(), g=ctx.createGain();
+  o.type='sawtooth'; o.frequency.value=f;
+  o2.type='square';  o2.frequency.value=f/2;
+  lp.type='lowpass'; lp.Q.value=7;
+  const hold=(60/BPM/4)*len;   // len 以 16 分音符为单位
+  lp.frequency.setValueAtTime(190,t);
+  lp.frequency.linearRampToValueAtTime(720,t+0.02);
+  lp.frequency.exponentialRampToValueAtTime(160,t+Math.max(0.08,hold*0.6));
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(v,t+0.004);
+  g.gain.setValueAtTime(v*0.85,t+hold*0.7);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+hold);
+  const o2g=ctx.createGain(); o2g.gain.value=0.5;
+  o.connect(lp); o2.connect(o2g).connect(lp);
+  lp.connect(g).connect(bassBus);
+  o.start(t); o2.start(t); o.stop(t+hold+0.02); o2.stop(t+hold+0.02);
+}
+
+function vArp(t,f,v){
+  const o=ctx.createOscillator(), o2=ctx.createOscillator();
+  const g=ctx.createGain(), lp=ctx.createBiquadFilter();
+  o.type='sawtooth'; o.frequency.value=f;
+  o2.type='square';  o2.frequency.value=f*2.002;
+  lp.type='lowpass'; lp.frequency.value=3300; lp.Q.value=1.6;
+  const o2g=ctx.createGain(); o2g.gain.value=0.22;
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(v,t+0.003);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.135);
+  o.connect(lp); o2.connect(o2g).connect(lp);
+  lp.connect(g).connect(arpBus);
+  o.start(t); o2.start(t); o.stop(t+0.16); o2.stop(t+0.16);
+}
+
+function vLead(t,f,v,len){
+  const g=ctx.createGain(), lp=ctx.createBiquadFilter();
+  lp.type='lowpass'; lp.frequency.value=5200; lp.Q.value=0.9;
+  g.gain.setValueAtTime(0,t);
+  const hold=(60/BPM/4)*len;
+  g.gain.linearRampToValueAtTime(v,t+0.03);
+  g.gain.setValueAtTime(v*0.8,t+hold*0.75);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+hold+0.22);
+  lp.connect(g).connect(leadBus);
+  [-7,0,7].forEach(det=>{
+    const o=ctx.createOscillator();
+    o.type='sawtooth';
+    o.frequency.value=f*Math.pow(2,det/1200);
+    o.connect(lp); o.start(t); o.stop(t+hold+0.25);
+  });
+  const sub=ctx.createOscillator(), sg=ctx.createGain();
+  sub.type='sine'; sub.frequency.value=f/2; sg.gain.value=0.35;
+  sub.connect(sg).connect(leadBus); sub.start(t); sub.stop(t+hold+0.25);
+}
+
+function vGlitch(t,v,rate){
+  const n=noise(t,0.16), bp=ctx.createBiquadFilter(), g=ctx.createGain();
+  bp.type='bandpass'; bp.Q.value=9;
+  bp.frequency.setValueAtTime(400+rate*900,t);
+  bp.frequency.exponentialRampToValueAtTime(90,t+0.12);
+  g.gain.setValueAtTime(v,t);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.13);
+  n.connect(bp).connect(g).connect(fxBus);
+  // 三段 stutter
+  for(let i=0;i<3;i++){
+    const st=t+0.02*i, gg=ctx.createGain();
+    gg.gain.setValueAtTime(v*0.5,st);
+    gg.gain.exponentialRampToValueAtTime(0.0001,st+0.016);
+    const nn=noise(st,0.03), hp=ctx.createBiquadFilter();
+    hp.type='highpass'; hp.frequency.value=1800;
+    nn.connect(hp).connect(gg).connect(fxBus);
+  }
+}
+
+/* ============================================================
+   6. 调度（前瞻 120ms，播放路径只查表）
+   ============================================================ */
+let playing=false, nextTime=0, pos={secIdx:0, bar:0, step:0}, timer=null;
+let uiSec=-1, uiBar=-1, uiStep=-1;
+
+const stepDur = () => (60/BPM)/4;
+
+function scheduleStep(sec,bar,step,time){
+  const ev = PAT[sec.id][bar][step];
+  if(!ev) return;
+  if(ev.kick)   vKick(time, ev.kick);
+  if(ev.snare)  vSnare(time, ev.snare);
+  if(ev.hat)    vHat(time, ev.hat);
+  if(ev.bass)   vBass(time, ev.bass.f, ev.bass.v, ev.bass.len);
+  if(ev.arp)    vArp(time, ev.arp.f, ev.arp.v);
+  if(ev.lead)   vLead(time, ev.lead.f, ev.lead.v, ev.lead.len);
+  if(ev.glitch) vGlitch(time, ev.glitch.v, ev.glitch.rate);
+}
+
+function advance(){
+  pos.step++;
+  if(pos.step < STEPS) return;
+  pos.step = 0;
+  pos.bar++;
+  const sec = FORM[PLAY_ORDER[pos.secIdx]];
+  if(pos.bar < sec.bars) return;
+  pos.bar = 0;
+  pos.secIdx++;
+  if(pos.secIdx >= PLAY_ORDER.length) pos.secIdx = 1; // 回到 GROOVE
+}
+
+function tick(){
+  if(!playing) return;
+  const horizon = ctx.currentTime + 0.12;
+  while(nextTime < horizon){
+    const sec = FORM[PLAY_ORDER[pos.secIdx]];
+    scheduleStep(sec, pos.bar, pos.step, nextTime);
+    uiSec=sec.id; uiBar=pos.bar; uiStep=pos.step;
+    nextTime += stepDur();
+    advance();
+  }
+  paint();
+}
+
+/* ============================================================
+   7. UI
+   ============================================================ */
+const TRACKS=[
+  {k:'kick',n:'KICK'},{k:'snare',n:'SNARE'},{k:'hat',n:'HAT'},
+  {k:'bass',n:'BASS'},{k:'arp',n:'ARP'},{k:'lead',n:'LEAD'},{k:'glitch',n:'GLITCH'}
+];
+const gridEl=document.getElementById('grid');
+const cells={};
+
+TRACKS.forEach(t=>{
+  const row=document.createElement('div'); row.className='row';
+  const l=document.createElement('div'); l.className='lbl'; l.textContent=t.n;
+  const cs=document.createElement('div'); cs.className='cells';
+  cells[t.k]=[];
+  for(let i=0;i<STEPS;i++){
+    const c=document.createElement('div');
+    c.className='c'+(i%4===0?' beat':'');
+    cs.appendChild(c); cells[t.k].push(c);
+  }
+  row.appendChild(l); row.appendChild(cs); gridEl.appendChild(row);
+});
+
+const formEl=document.getElementById('formbar');
+FORM.forEach(s=>{
+  const d=document.createElement('div');
+  d.className='seg'; d.textContent=s.name; d.dataset.sec=s.id;
+  formEl.appendChild(d);
+});
+
+let painted=-1;
+function paint(){
+  if(uiSec<0) return;
+  if(painted===uiSec*1000+uiBar*16+uiStep) return;
+  painted=uiSec*1000+uiBar*16+uiStep;
+  const ev = PAT[uiSec][uiBar][uiStep];
+  for(const t of TRACKS){
+    for(let i=0;i<STEPS;i++){
+      const c=cells[t.k][i];
+      c.classList.remove('cur','hit','on2');
+    }
+    const cur=cells[t.k][uiStep];
+    cur.classList.add('cur');
+    if(ev && ev[t.k]){ cur.classList.add('hit'); if(t.k==='arp'||t.k==='glitch') cur.classList.add('on2'); }
+  }
+  [...formEl.children].forEach(el=>el.classList.toggle('act', +el.dataset.sec===uiSec));
+  document.getElementById('sec').textContent = FORM[uiSec].name;
+  document.getElementById('bar').textContent = (uiBar+1)+'/'+FORM[uiSec].bars;
+  document.getElementById('tick').textContent = (uiStep*STEP_TICKS);
+}
+
+document.getElementById('play').onclick = () => {
+  initAudio();
+  if(ctx.state==='suspended') ctx.resume();
+  if(playing) return;
+  pos={secIdx:0,bar:0,step:0};
+  nextTime = ctx.currentTime + 0.08;
+  playing=true;
+  document.getElementById('play').classList.add('on');
+  timer=setInterval(tick,25);
+};
+
+document.getElementById('stop').onclick = () => {
+  playing=false;
+  if(timer) clearInterval(timer);
+  document.getElementById('play').classList.remove('on');
+};
+
+document.getElementById('crack').onclick = () => {
+  initAudio();
+  if(ctx.state==='suspended') ctx.resume();
+  const t=ctx.currentTime;
+  // 打破当前秩序：噪声爆发 + 滤波下坠，之后可自然回到原结构
+  for(let i=0;i<5;i++) vGlitch(t+i*0.045, 0.3, 1.6-i*0.25);
+  const n=noise(t,0.5), bp=ctx.createBiquadFilter(), g=ctx.createGain();
+  bp.type='bandpass'; bp.Q.value=3;
+  bp.frequency.setValueAtTime(6000,t);
+  bp.frequency.exponentialRampToValueAtTime(120,t+0.42);
+  g.gain.setValueAtTime(0.22,t);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+0.48);
+  n.connect(bp).connect(g).connect(master);
+};
+
+document.getElementById('seed').addEventListener('change', e => {
+  const v=(e.target.value||'').trim().toUpperCase();
+  if(!/^[0-9A-F]{16}$/.test(v)){ e.target.value = SEED.toString(16).toUpperCase().padStart(16,'0'); return; }
+  SEED=BigInt('0x'+v);
+  build();
+  if(uiSec>=0) paint();
+});
+
+build();
+</script>
+</body>
+</html>

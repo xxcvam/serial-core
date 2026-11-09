@@ -1,0 +1,59 @@
+{
+  "version": "SERIAL-RNG/0.3",
+  "status": "candidate",
+  "note": "v0.3 自有向量。禁止覆盖 v0.2 与 S1-POC1 的历史向量；实现变更必须升版本号。",
+  "seed": "A7F209C13B8ED614",
+  "generatorVersion": 1,
+  "domain": { "music": 1, "visual": 2, "card": 3 },
+  "purpose": {
+    "gate": 1, "pitch": 2, "velocity": 3, "duration": 4,
+    "probability": 5, "timbre": 6, "eventId": 7, "mutation": 8
+  },
+  "trackId": {
+    "kick": 1, "snare": 2, "hat": 3, "bass": 4, "arp": 5, "lead": 6, "glitch": 7
+  },
+  "keyLayout": {
+    "total": 48,
+    "magic": "SERIALM/0.2 (11 bytes ASCII) + 0x00 = 12 bytes",
+    "fields": [
+      { "name": "magic", "offset": 0, "size": 12, "endian": "-" },
+      { "name": "seed", "offset": 12, "size": 8, "endian": "little" },
+      { "name": "generatorVersion", "offset": 20, "size": 2, "endian": "little" },
+      { "name": "domain", "offset": 22, "size": 1, "endian": "-" },
+      { "name": "trackId", "offset": 23, "size": 2, "endian": "little" },
+      { "name": "sectionId", "offset": 25, "size": 2, "endian": "little" },
+      { "name": "localBar", "offset": 27, "size": 4, "endian": "little" },
+      { "name": "tick", "offset": 31, "size": 8, "endian": "little" },
+      { "name": "purpose", "offset": 39, "size": 1, "endian": "-" },
+      { "name": "attempt", "offset": 40, "size": 4, "endian": "little" },
+      { "name": "reserved", "offset": 44, "size": 4, "endian": "little" }
+    ]
+  },
+  "digest": {
+    "algorithm": "SHA-256",
+    "output": "standard digest, 32 bytes, each 32-bit word written big-endian",
+    "initstate": "digest[0..7] read as big-endian u64",
+    "initseq": "digest[8..15] read as big-endian u64, then pcgSeed applies (initseq<<1)|1",
+    "magicSha256Prefix": "23acde19f24107b3"
+  },
+  "pcg": {
+    "multiplier": "6364136223846793005",
+    "increment": "1442695040888963407",
+    "output": "XSH-RR 64/32, one 32-bit word per call"
+  },
+  "vectors": [
+    { "track": "kick",   "section": 1, "bar": 0, "tick": 48, "purpose": "gate",  "attempt": 0, "value": 800243746 },
+    { "track": "snare",  "section": 1, "bar": 0, "tick": 48, "purpose": "gate",  "attempt": 0, "value": 2345530725 },
+    { "track": "hat",    "section": 1, "bar": 0, "tick": 48, "purpose": "gate",  "attempt": 0, "value": 596672106 },
+    { "track": "bass",   "section": 1, "bar": 0, "tick": 48, "purpose": "gate",  "attempt": 0, "value": 3495400725 },
+    { "track": "arp",    "section": 1, "bar": 0, "tick": 48, "purpose": "gate",  "attempt": 0, "value": 387588177 },
+    { "track": "lead",   "section": 1, "bar": 0, "tick": 48, "purpose": "gate",  "attempt": 0, "value": 3780759646 },
+    { "track": "glitch", "section": 1, "bar": 0, "tick": 48, "purpose": "gate",  "attempt": 0, "value": 1812408616 },
+    { "track": "arp",    "section": 3, "bar": 1, "tick": 72, "purpose": "pitch", "attempt": 2, "value": 627203707 }
+  ],
+  "rangePlan": {
+    "bass": { "root": 55,  "semitoneOffsets": [0, 0, 0, 3, 5, 7, 10], "span": "A1-G2" },
+    "arp":  { "root": 220, "semitoneOffsets": [0, 3, 7, 10],        "span": "A3-G4", "octaveLocked": true },
+    "lead": { "root": 440, "semitoneOffsets": [0, 2, 3, 5, 7],      "span": "A4-E5" }
+  }
+}
