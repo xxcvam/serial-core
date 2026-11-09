@@ -15,14 +15,14 @@ tools/      验证脚本与黄金向量
 
 ## audition/ 版本关系
 
+仓库只保留当前版本，旧试听版（Prototype v0.1 / v0.2 / Audition v0.3）已按用户要求移除，避免打开错文件。
+历史缺陷与改动记录见下方 v0.4.1 / v0.4.2 两节，以及 `docs/` 下对应规格。
+
 | 文件 | 状态 | 说明 |
 |---|---|---|
-| `SERIAL_Sonic_Identity_Prototype_v0.1.html` | 归档 | 首版；Snare/Hat 不触发、Sub 无包络、全声部共享 trackId、SHA-256 字节序错 |
-| `SERIAL_Sonic_Identity_v0.2.html` | 归档 | 修上述缺陷；Arp 改八步动机锁单八度；CRACK 改按住式 |
-| `SERIAL_Sonic_Identity_Audition_v0.3.html` | 归档 | 合并外部 Audition 的鼓与和声；14→10 项自测通过 |
-| `SERIAL_Sonic_Identity_Audition_v0.4.html` | **当前** | 鼓组全部重做（909 式 hat）+ 编配返修（和声走动、互质旋转、LEAD_CELLS/PHRASE/算子）+ 混音链路 |
+| `SERIAL_Sonic_Identity_Audition_v0.4.html` | **唯一当前版本** | 鼓组全部重做（909 式 hat）+ 编配返修 + 混音链路；其后 v0.4.1 / v0.4.2 的修改都落在这一个文件内 |
 
-`v0.4` 里 `SYNTH` 三档（v0.4 新鼓 / v0.3 旧鼓 / 中性替换）与 `SCHEME A/B` 是给对照实验用的，不是产品分支。
+`v0.4` 里 `SYNTH` 三档（新鼓 / 旧鼓 / 中性替换）与 `SCHEME A/B` 是给对照实验用的，不是产品分支。
 
 ### v0.4.1 修了什么（在 v0.4 文件内）
 
@@ -55,9 +55,11 @@ tools/      验证脚本与黄金向量
 node tools/verify_v04.js       # 18 项断言：寻址、端序、互质、亮度递增、让位、glitch 栅格与位置分布
 node tools/smoke_v04.js        # 伪 AudioContext 驱动 30s：建图/调度/CRACK/STOP/快速重启不抛
 node tools/rng_crosscheck.js   # 独立 SHA-256(node:crypto)+PCG32+键编码，与页面 R32 对拍 4480 坐标
+node tools/pcm_render.mjs      # 真 Chromium OfflineAudioContext 渲染 PCM：peak/RMS/削波，6 场景
 node tools/probe_hat.js        # hat 三种设计离线测峰值/RMS/频段占比
-node tools/gen_v04.mjs         # 编配规则探针（33/33）
 ```
+
+`tools/gen_v04.mjs`、`tools/gen_v041.mjs`、`tools/SERIAL_mix_probe.mjs` 是**历史脚本**：它们读取已删除的 v0.3 试听页，当前不可运行。规则结论已并入 v0.4.2 与 `docs/` 下对应规格，保留为证据存档。
 
 三个检查脚本的退出码：0 = 全过，1 = 有失败，2 = 找不到文件。
 
@@ -73,7 +75,7 @@ node tools/gen_v04.mjs         # 编配规则探针（33/33）
 
 ## 已知缺口
 
-- 未做 Web Audio 实际渲染测量（没有 headless Chrome 的 PCM 抓取）；hat 与各声部的频段占比来自 `tools/probe_hat.js` 的加法合成模型与专家脚本，未在浏览器内复测。`tools/verify_v04.js`、`tools/smoke_v04.js`、`tools/rng_crosscheck.js` 只证明代码路径与数值一致，**不证明听感**。
+- 已做真实渲染测量：`tools/pcm_render.mjs` 用本机 Chrome 的 CDP 渲染整段混音并测 peak/RMS/削波（数字见 v0.4.2 一节）。仍未做的是**分频段归属**与**听感**——前者来自 `tools/probe_hat.js` 的加法合成模型，未在浏览器内复测。
 - 听感结论全部待用户判定：这个仓库里没有任何音频文件。
 - 契约仍是 DRAFT，7 项待冻结（见 contract 文末）。
 - C++ / JavaScript 双向对照只做了 JavaScript 侧（`rng_crosscheck.js`）；C++ 侧实现尚未出生。
